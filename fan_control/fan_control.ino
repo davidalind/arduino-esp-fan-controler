@@ -37,6 +37,8 @@ const byte TACHO_PIN = D4;
 
 // web server
 const char *mdnsName PROGMEM = "fancontrol";  // Domain name for the mDNS responder
+const char *ssid PROGMEM = SSID;
+const char *password PROGMEM = PASSWORD;
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 IPAddress apIP(192, 168, 4, 1);  // Private network address: local & gateway
