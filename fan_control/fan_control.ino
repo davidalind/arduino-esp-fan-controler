@@ -6,6 +6,21 @@
 #include <AsyncElegantOTA.h>
 #include "credentials.h"
 
+// PWM conf
+const byte PWM_PIN = D1;
+#define PWM_FREQ_HZ 25000 // PWM frequency in HZ
+
+// TACHO conf
+const byte TACHO_PIN = D4;
+
+// Web server conf
+//const char *mdnsName PROGMEM = "fancontrol";  // Domain name for the mDNS responder. This makes the ESP crash...
+const char *ssid PROGMEM = SSID;
+const char *password PROGMEM = PASSWORD;
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
+IPAddress apIP(192, 168, 4, 1);  // Private network address: local & gateway
+
 
 
 
@@ -23,20 +38,6 @@ int lasttachostate = LOW;
 unsigned long lasttachopoll = 0;
 
 
-const byte PWM_PIN = D1;
-const byte TACHO_PIN = D4;
-
-
-
-#define PWM_FREQ_HZ 25000 // PWM frequency in HZ
-
-// web server
-//const char *mdnsName PROGMEM = "fancontrol";  // Domain name for the mDNS responder
-const char *ssid PROGMEM = SSID;
-const char *password PROGMEM = PASSWORD;
-AsyncWebServer server(80);
-AsyncWebSocket ws("/ws");
-IPAddress apIP(192, 168, 4, 1);  // Private network address: local & gateway
 
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html>
@@ -222,11 +223,6 @@ void setup() {
   pinMode(TACHO_PIN, INPUT_PULLUP);  // Configure TACHO pin to output
   // attachInterrupt(digitalPinToInterrupt(TACHO_PIN), counttacho, FALLING); // 2 interrupts per revolution
 
-  // dutycycle = 0; // set default duty cycle to 50%
-  // num_tacho = 0;
-  // rpm = 0;
-  // lastrpmcalctime = millis();
-  // lastrpmsendtime = 0;
 
 
 
