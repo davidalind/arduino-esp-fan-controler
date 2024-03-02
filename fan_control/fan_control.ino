@@ -1,13 +1,8 @@
 // Import required libraries
-//#include <Arduino.h>
 #include <ESP8266WiFi.h>
-//#include <Hash.h>
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 //#include <ESP8266mDNS.h>
-//#include <Adafruit_Sensor.h>
-//#include <DHT.h>
-//#include <Arduino_JSON.h>
 #include <AsyncElegantOTA.h>
 #include "credentials.h"
 
@@ -32,21 +27,16 @@ const byte PWM_PIN = D1;
 const byte TACHO_PIN = D4;
 
 
-//const word PWM_FREQ_HZ = 25000; //Adjust this value to adjust the frequency (Frequency in HZ!)  (Set currently to 25kHZ)
-#define PWM_FREQ_HZ 25000
+
+#define PWM_FREQ_HZ 25000 // PWM frequency in HZ
 
 // web server
-const char *mdnsName PROGMEM = "fancontrol";  // Domain name for the mDNS responder
+//const char *mdnsName PROGMEM = "fancontrol";  // Domain name for the mDNS responder
 const char *ssid PROGMEM = SSID;
 const char *password PROGMEM = PASSWORD;
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 IPAddress apIP(192, 168, 4, 1);  // Private network address: local & gateway
-
-/*
-const char canary[] = "|/-\\";
-byte lastcanary = 0;
-*/
 
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html>
@@ -213,14 +203,9 @@ const char index_html[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
-//      <p class="state"><span id="status">--</span> <span id="canary"></span></p>
-
 
 
 void setup() {
-  // put your setup code here, to run once:
-
-  //  delay(5000);
 
   Serial.begin(9600);
 
@@ -231,11 +216,10 @@ void setup() {
   pinMode(PWM_PIN, OUTPUT);      // Configure PWM pin to output
   analogWriteRange(100);         // Configure range to be 0-100 to skip conversion later
   analogWriteFreq(PWM_FREQ_HZ);  // Configure PWM frequency
-
   analogWrite(PWM_PIN, dutycycle);
 
   // setup tacho
-  pinMode(TACHO_PIN, INPUT_PULLUP);  // Configure PWM pin to output
+  pinMode(TACHO_PIN, INPUT_PULLUP);  // Configure TACHO pin to output
   // attachInterrupt(digitalPinToInterrupt(TACHO_PIN), counttacho, FALLING); // 2 interrupts per revolution
 
   // dutycycle = 0; // set default duty cycle to 50%
@@ -280,12 +264,6 @@ void setup() {
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send(200, "text/html", index_html);
   });
-  //  server.on("/dutycycle", HTTP_GET, [](AsyncWebServerRequest *request){
-  //    request->send_P(200, "text/plain", String(t).c_str());
-  //  });
-  //  server.on("/rpm", HTTP_GET, [](AsyncWebServerRequest *request){
-  //    request->send_P(200, "text/plain", String(h).c_str());
-  //  });
 
   AsyncElegantOTA.begin(&server);  // Start ElegantOTA
 
@@ -305,7 +283,6 @@ void loop() {
     analogWrite(PWM_PIN, dutycycle);
 
     Serial.println("You wrote: " + command + " | Duty cycle set to " + String(dutycycle));
-    //    ws.textAll("{\"dutycycle\":" + String(dutycycle) + "}");
   }
 
 
@@ -340,8 +317,8 @@ void loop() {
 
 
 
-//    rpm = (mytachos * (unsigned long)30000) / (millis() - lastrpmsendtime);
-    rpm = (mytachos * (unsigned long)15000) / (millis() - lastrpmsendtime);
+//    rpm = (mytachos * (unsigned long)30000) / (millis() - lastrpmsendtime); // 2 counts per rev
+    rpm = (mytachos * (unsigned long)15000) / (millis() - lastrpmsendtime); // 4 counts per rev
 
 
     Serial.println("RPM: " + String(rpm));
@@ -349,15 +326,6 @@ void loop() {
     //ws.textAll("{\"rpm\":" + String(rpm) + ", \"dutycycle\":" + String(dutycycle) + "}");
     ws.textAll("{\"rpm\":" + String(rpm) + ", \"dutycycle\":" + String(dutycycle) + ", \"freemem\":" + String(ESP.getFreeHeap())  + "}");
 
-    
-
-    /*
-    ws.textAll("{\"rpm\":" + String(rpm) + ", \"dutycycle\":" + String(dutycycle) + ", \"canary\":\"" + canary[lastcanary] + "\"}");
-    lastcanary++;
-    if (lastcanary > 3) {
-      lastcanary = 0;
-    }
-*/
 
     lastrpmsendtime = millis();
 
