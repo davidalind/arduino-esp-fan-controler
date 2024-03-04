@@ -2,12 +2,13 @@
 ## General
 ESP8266 fan controler with WiFi Access Point.
 
-Control interface is webpage with current PRM and duty cycle.
+Control interface is webpage with current PRM and duty cycle. New duty cycle can be set through the webpage.
 
 PRM and duty cycle are pushed from fan controler unsing websocket.
 
 ## Connecting to UI
 Default SSID: fan_controler
+
 Default PASSWORD: 12341234
 
 The IP of the control interface is: 192.168.4.1
