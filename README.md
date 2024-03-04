@@ -1,7 +1,9 @@
 # arduino-esp-fan-controler
 ## General
 ESP8266 fan controler with WiFi Access Point.
+
 Control interface is webpage with current PRM and duty cycle.
+
 PRM and duty cycle are pushed from fan controler unsing websocket.
 
 ## Connecting to UI
@@ -23,8 +25,13 @@ The IP of the control interface is: 192.168.4.1
 
 ## Circuit
 Board: Node MCU w/ ESP8266
+
 No external components needed.
+
 GND is connected to G and fan GND.
+
 Vin is connected to Vin and fan 12V.
+
 Fan PWM is connected to D1.
+
 Fan tacho is connected to D4.
