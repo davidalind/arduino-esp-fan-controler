@@ -1,3 +1,12 @@
+/*
+ESP8266 Arduino 4 pin fan controler
+
+Code for the webserver and websocket was found here
+https://randomnerdtutorials.com/esp8266-nodemcu-websocket-server-arduino/
+
+
+*/
+
 // Import required libraries
 #include <ESP8266WiFi.h>
 #include <ESPAsyncTCP.h>
@@ -224,9 +233,7 @@ void setup() {
   // attachInterrupt(digitalPinToInterrupt(TACHO_PIN), counttacho, FALLING); // 2 interrupts per revolution
 
 
-
-
-
+  // setup WiFi AP
   WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
 
   //if(WiFi.softAP(ssid,password)==true)
@@ -235,8 +242,6 @@ void setup() {
     Serial.println(ssid);
     Serial.print(F("Access Point IP: "));
     Serial.println(WiFi.softAPIP());
-    Serial.print(F("Local IP: "));
-    Serial.println(WiFi.localIP());  // Print ESP8266 Local IP Address
   } else {
     Serial.println(F("Unable to Create Access Point"));
   }
@@ -256,21 +261,19 @@ void setup() {
   */
 
   // setup webserver
-  // Route for root / web page
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send(200, "text/html", index_html);
   });
 
-  AsyncElegantOTA.begin(&server);  // Start ElegantOTA
+  // Start ElegantOTA
+  AsyncElegantOTA.begin(&server);  
 
-  // Start server
+  // Start web server
   server.begin();
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-
-
+  // check if dutu cycle input from Arduino CLI
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
     command.trim();
@@ -283,7 +286,9 @@ void loop() {
 
 
 
-
+  // Check state of tacho input @1000 Hz.
+  // If changed: count.
+  // Fans have 2 pulses / rev => 4 changes / rev
   if (micros() - lasttachopoll > 1000) {
     int pinstate = digitalRead(TACHO_PIN);
     if (pinstate != lasttachostate) {
@@ -296,42 +301,35 @@ void loop() {
 
 
 
-
+  // Push RPM
   if (lastrpmsendtime + 2000 < millis()) {
-    //  Serial.println("RPM: " + String((num_tacho / (millis() - lastrpmtime)) / 2 * 1000 * 60 ));
+    //   Serial.println("RPM: " + String((num_tacho / (millis() - lastrpmtime)) / 2 * 1000 * 60 ));
     //   rpm = (num_tacho / ((millis() - lastrpmtime)/1000)) * 60 / 4;
     //   rpm = (unsigned int)((unsigned long)1200000 / lastrpmduration);
+    //   rpm = (unsigned int)((unsigned long)1200000 / lastrpmduration);
 
-    /*
-  rpm = (unsigned int)((unsigned long)1200000 / lastrpmduration);
-*/
-
+	// number of pulses
     //    noInterrupts();
     unsigned long mytachos = num_tacho;
     num_tacho = 0;
     //    interrupts();
 
-
-
-//    rpm = (mytachos * (unsigned long)30000) / (millis() - lastrpmsendtime); // 2 counts per rev
+	// calc RPM from pulses and duration since last calulation
+	//  rpm = (mytachos * (unsigned long)30000) / (millis() - lastrpmsendtime); // 2 counts per rev
     rpm = (mytachos * (unsigned long)15000) / (millis() - lastrpmsendtime); // 4 counts per rev
-
-
+	lastrpmsendtime = millis();
+	
+	// Push JSON object with data to WS clients
     Serial.println("RPM: " + String(rpm));
-    //ws.textAll("{\"rpm\":" + String(rpm) + "}");
-    //ws.textAll("{\"rpm\":" + String(rpm) + ", \"dutycycle\":" + String(dutycycle) + "}");
     ws.textAll("{\"rpm\":" + String(rpm) + ", \"dutycycle\":" + String(dutycycle) + ", \"freemem\":" + String(ESP.getFreeHeap())  + "}");
 
-
-    lastrpmsendtime = millis();
-
+    // blink onboard LED
     if (ledState == LOW) {
-      ledState = HIGH;  // Note that this switches the LED *off*
+      ledState = HIGH;
     } else {
-      ledState = LOW;  // Note that this switches the LED *on*
+      ledState = LOW;
     }
     digitalWrite(LED_BUILTIN, ledState);
-    Serial.println(ESP.getFreeHeap(), DEC);
   }
 
 
