@@ -8,12 +8,21 @@ https://randomnerdtutorials.com/esp8266-nodemcu-websocket-server-arduino/
 */
 
 // Import required libraries
+#include <EEPROM.h>
 #include <ESP8266WiFi.h>
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 //#include <ESP8266mDNS.h>
 #include <AsyncElegantOTA.h>
 #include "credentials.h"
+
+
+// EEPROM conf
+#define EEPROM_SSID_START 1
+#define EEPROM_SSID_LEN 32
+#define EEPROM_PASSWORD_START 33
+#define EEPROM_PASSWORD_LEN 32
+
 
 // PWM conf
 const byte PWM_PIN = D1;
@@ -24,12 +33,21 @@ const byte TACHO_PIN = D4;
 
 // Web server conf
 //const char *mdnsName PROGMEM = "fancontrol";  // Domain name for the mDNS responder. This makes the ESP crash...
-const char *ssid PROGMEM = SSID;
-const char *password PROGMEM = PASSWORD;
+const char *ap_ssid PROGMEM = AP_SSID;
+const char *ap_password PROGMEM = AP_PASSWORD;
+#define SSID_LIST_MAXLEN = 30;
+char ssid[32];
+char password[32];
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 IPAddress apIP(192, 168, 4, 1);  // Private network address: local & gateway
 
+const char* mqtt_server = MQTT_BROKER_HOST;
+const short* mqtt_port = MQTT_BROKER_PORT
+WiFiClient espClient;
+PubSubClient client(espClient);
+#define MSG_BUFFER_SIZE	(50)
+char msg[MSG_BUFFER_SIZE];
 
 
 
@@ -141,8 +159,28 @@ const char index_html[] PROGMEM = R"rawliteral(
     <p></p>
 
     <div class="card">
+      <h2>Stationary WiFi</h2>
+      <p class="state">SSID</p>
+      <p><input class="textinput" type="text" size="3" id="ssidtext"></p>
+      <p><button id="setssidtext" class="button">Save SSID</button></p>
+
+      <select name="ssidlist" id="ssidlist"></select>
+      <p><button id="scanssid" class="button">Scan SSID</button></p>
+      <p><button id="setssidselect" class="button">Save SSID</button></p>
+
+      <p><button id="setssid" class="button">Save SSID</button></p>
+      <p class="state">Password</p>
+      <p><input class="textinput" type="text" size="3" id="password"></p>
+      <p><button id="setpassword" class="button">Save password</button></p>
+    </div>
+
+    <p></p>
+
+    <div class="card">
       <h2>Connection status</h2>
       <p class="state"><span id="status">--</span></p>
+      <h2>Stationary WiFi status</h2>
+      <p class="state"><span id="wifi">--</span></p>
       <h2>Free memory</h2>
       <p class="state"><span id="freemem">--</span></p>
     </div>
@@ -182,8 +220,23 @@ const char index_html[] PROGMEM = R"rawliteral(
     var keys = Object.keys(myObj);
 
     for (var i = 0; i < keys.length; i++){
-        var key = keys[i];
+      var key = keys[i];
+      if (key === 'ssidlist')
+        let ssidlist = document.getElementById('ssidlist');
+        let newDefault1 = new Option('Select SSID', null, true, true);
+        newDefault1.disabled = true;
+        ssidlist.add(newDefault1);
+
+        let data = myObj[key];
+        data.forEach((ssid) => {
+          let option = new Option(ssid, ssid);
+          console.log(option);
+          ssidlist.add(option);
+        }
+        document.getElementById('scanssid').disabled = false;
+      } else {
         document.getElementById(key).innerHTML = myObj[key];
+      }
     }
   }
 
@@ -194,14 +247,34 @@ const char index_html[] PROGMEM = R"rawliteral(
 
   function initButton() {
     document.getElementById('setdutycycle').addEventListener('click', setdutycycle);
+    document.getElementById('setssidtext').addEventListener('click', setssidtext);
+    document.getElementById('setssidselect').addEventListener('click', setssidselect);
+    document.getElementById('scanssid').addEventListener('click', scanssid);
+    document.getElementById('setpassword').addEventListener('click', setpassword);
   }
   function setdutycycle(){
-    websocket.send(document.getElementById('newdutycycle').value);
+    websocket.send("dutycycle=" & document.getElementById('newdutycycle').value);
   }
   function senddc() {
     if(event.key === 'Enter') {
         setdutycycle();        
     }
+  }
+  function setssidtext(){
+    websocket.send("ssid=" & document.getElementById('ssidtext').value);
+    document.getElementById('ssid').innerHTML = "";
+  }
+  function scanssid(){
+    websocket.send("scanssid=1");
+    document.getElementById('scanssid').disabled = true;
+  }
+  function setssidselect(){
+    var e = document.getElementById('ssidlist');
+    websocket.send("ssid=" & e.options[e.selectedIndex].text);
+  }
+  function setpassword(){
+    websocket.send("password=" & document.getElementById('password').value);
+    document.getElementById('password').innerHTML = "";
   }
   function resetvalues(){
     document.getElementById('dutycycle').innerHTML = "--";
@@ -212,6 +285,134 @@ const char index_html[] PROGMEM = R"rawliteral(
 </body>
 </html>
 )rawliteral";
+
+// populate select
+// https://stackoverflow.com/questions/73708331/how-to-populate-a-select-dropdown-with-a-list-of-json-values-using-js-fetch
+// ssidlist shall be an array
+
+void setup_wifi() {
+
+  delay(10);
+  // We start by connecting to a WiFi network
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+
+  WiFi.mode(WIFI_AP_STA);
+ 
+  // AP setup
+  WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
+  //if(WiFi.softAP(ssid,password)==true)
+  if (WiFi.softAP(ap_ssid, ap_password, 1, 0, 2) == true) {
+    Serial.print(F("Access Point is Creadted with SSID: "));
+    Serial.println(ap_ssid);
+    Serial.print(F("Access Point IP: "));
+    Serial.println(WiFi.softAPIP());
+  } else {
+    Serial.println(F("Unable to Create Access Point"));
+  }
+
+  // STA WiFi setup
+  // get cred from eeprom
+  readEEPROM(EEPROM_SSID_START,EEPROM_SSID_LEN,ssid);
+  readEEPROM(EEPROM_PASSWORD_START,EEPROM_PASSWORD_LEN,password);
+  // conf STA
+  WiFi.begin(ssid, password);
+
+/*
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+*/
+  randomSeed(micros());
+
+//  Serial.println("");
+//  Serial.println("WiFi connected");
+//  Serial.println("IP address: ");
+//  Serial.println(WiFi.localIP());
+}
+/*
+char wifi_ssid_private[32];
+char wifi_password_private[32];
+char clientName[10] = "newClient";
+char ipAddr[16] = "172.024.001.001";//Pi Access Point IP-Adr.
+*/
+/*  
+  memset(ssid, 0, sizeof(ssid));
+  memset(password, 0, sizeof(ssid));
+  strcat(wifi_ssid_private, "SSID1234");
+  strcat(wifi_password_private, "PW1234");
+
+  writeEEPROM(0,32,wifi_ssid_private);//32 byte max length
+  writeEEPROM(32,32, wifi_password_private);//32 byte max length
+  writeEEPROM(64,10, clientName);//10 byte max length
+  writeEEPROM(74,16, ipAddr);//16 byte max length
+  // 85 byte saved in total?  
+  Serial.println("everything saved...");
+  readEEPROM(0,32,wifi_ssid_private);
+  readEEPROM(32,32,wifi_password_private);
+  readEEPROM(64,10,clientName);
+  readEEPROM(74,16,ipAddr);
+*/
+
+
+void reconnect() {
+  // Loop until we're reconnected
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Create a random client ID
+    String clientId = "ESP8266Client-";
+    clientId += String(random(0xffff), HEX);
+    // Attempt to connect
+    if (client.connect(clientId.c_str())) {
+      Serial.println("connected");
+      // Once connected, publish an announcement...
+      client.publish("outTopic", "hello world");
+      // ... and resubscribe
+      client.subscribe("inTopic");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(5000);
+    }
+  }
+}
+
+
+
+
+
+//startAdr: offset (bytes), writeString: String to be written to EEPROM
+void writeEEPROM(int startAdr, int laenge, char* writeString) {
+  EEPROM.begin(512); //Max bytes of eeprom to use
+  yield();
+  Serial.println();
+  Serial.print("writing EEPROM: ");
+  //write to eeprom 
+  for (int i = 0; i < laenge; i++)
+    {
+      EEPROM.write(startAdr + i, writeString[i]);
+      Serial.print(writeString[i]);
+    }
+  EEPROM.commit();
+  EEPROM.end();           
+}
+
+void readEEPROM(int startAdr, int maxLength, char* dest) {
+  EEPROM.begin(512);
+  delay(10);
+  for (int i = 0; i < maxLength; i++)
+    {
+      dest[i] = char(EEPROM.read(startAdr + i));
+    }
+  EEPROM.end();    
+  Serial.print("ready reading EEPROM:");
+  Serial.println(dest);
+}
+  
 
 
 
@@ -234,20 +435,13 @@ void setup() {
 
 
   // setup WiFi AP
-  WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
+  setup_wifi();
 
-  //if(WiFi.softAP(ssid,password)==true)
-  if (WiFi.softAP(ssid, password, 1, 0, 2) == true) {
-    Serial.print(F("Access Point is Creadted with SSID: "));
-    Serial.println(ssid);
-    Serial.print(F("Access Point IP: "));
-    Serial.println(WiFi.softAPIP());
-  } else {
-    Serial.println(F("Unable to Create Access Point"));
-  }
+  // setup MQTT
+  client.setServer(mqtt_server, mqtt_port);
+  client.setCallback(onMQTTMessage);
 
-
-
+  // setup websocket
   ws.onEvent(webSocketEvent);  // if there's an incomming websocket message, go to function 'webSocketEvent'
   server.addHandler(&ws);
   Serial.println(F("WebSocket server started."));
@@ -283,6 +477,12 @@ void loop() {
 
     Serial.println("You wrote: " + command + " | Duty cycle set to " + String(dutycycle));
   }
+
+  // mqtt
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
 
 
 
@@ -323,6 +523,21 @@ void loop() {
     Serial.println("RPM: " + String(rpm));
     ws.textAll("{\"rpm\":" + String(rpm) + ", \"dutycycle\":" + String(dutycycle) + ", \"freemem\":" + String(ESP.getFreeHeap())  + "}");
 
+/* mqtt
+    snprintf (msg, MSG_BUFFER_SIZE, "hello world #%ld", value);
+    Serial.print("Publish message: ");
+    Serial.println(msg);
+    client.publish("outTopic", msg);
+*/
+
+    if (WiFi.status() != WL_CONNECTED) {
+      ws.textAll("{\"wifi\":\"not connected\"}");
+    } else {
+      ws.textAll("{\"wifi\":\"connected\"}");
+    }
+
+
+
     // blink onboard LED
     if (ledState == LOW) {
       ledState = HIGH;
@@ -332,6 +547,7 @@ void loop() {
     digitalWrite(LED_BUILTIN, ledState);
   }
 
+  
 
   ws.cleanupClients();
   //  MDNS.update();
@@ -375,16 +591,128 @@ void webSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEve
   }
 }
 
+// assumes key=value
 void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
   AwsFrameInfo *info = (AwsFrameInfo *)arg;
   if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
     data[len] = 0;
-    String message = (char *)data;
-    message.trim();
-    dutycycle = message.toInt();
-    if (dutycycle < 0) { dutycycle = 0; }
-    if (dutycycle > 100) { dutycycle = 100; }
-    analogWrite(PWM_PIN, dutycycle);
-    ws.textAll("{\"dutycycle\":" + String(dutycycle) + "}");
+//    String message = (char *)data;
+//    message.trim();
+
+// ~~ https://arduino.stackexchange.com/questions/1013/how-do-i-split-an-incoming-string ~~
+// https://forum.arduino.cc/t/serial-input-basics-updated/382007/3
+
+    char key[20] = {0};
+    char value[20] = {0};    
+    char * strtokIndx; // this is used by strtok() as an index
+    strtokIndx = strtok(data,",");      // get the first part - the key
+    strcpy(key, strtokIndx); // copy it to key
+    strtokIndx = strtok(NULL,",");      // get the first part - the value
+    strcpy(value, strtokIndx); // copy it to value
+
+    if (strcmp(key, (const char*)"dutycycle") == 0) {
+      dutycycle = atoi(value);
+      //dutycycle = message.toInt();
+      if (dutycycle < 0) { dutycycle = 0; }
+      if (dutycycle > 100) { dutycycle = 100; }
+      analogWrite(PWM_PIN, dutycycle);
+      ws.textAll("{\"dutycycle\":" + String(dutycycle) + "}");
+    }
+    else if (strcmp(key, (const char*)"ssid") == 0) {
+      strcpy(ssid, value);
+      writeEEPROM(EEPROM_SSID_START,EEPROM_SSID_LEN,value);
+    }
+    else if (strcmp(key, (const char*)"scanssid") == 0) {
+      scanssid();
+    }
+    else if (strcmp(key, (const char*)"password") == 0) {
+      strcpy(password, value);
+      writeEEPROM(EEPROM_PASSWORD_START,EEPROM_PASSWORD_LEN,value);
+    }
   }
+}
+
+
+
+void scanssid() {
+  String ssid;
+  int32_t rssi;
+  uint8_t encryptionType;
+  uint8_t *bssid;
+  int32_t channel;
+  bool hidden;
+  int scanResult;
+
+//  const int SSIDLIST_MAXLEN = 10;  // array capacity
+//  const char *SSIDist[SSID_LIST_MAXLEN] = {};
+
+
+  Serial.println(F("Starting WiFi scan..."));
+
+  scanResult = WiFi.scanNetworks(/*async=*/false, /*hidden=*/true);
+
+  String ssidlist = "{\"ssidlist\":[";
+
+  if (scanResult == 0) {
+    Serial.println(F("No networks found"));
+    ssidlist += "\"No networks found\"]";
+  } else if (scanResult > 0) {
+    Serial.printf(PSTR("%d networks found:\n"), scanResult);
+
+    // Print unsorted scan results
+    for (int8_t i = 0; i < scanResult; i++) {
+      WiFi.getNetworkInfo(i, ssid, encryptionType, rssi, bssid, channel, hidden);
+      if(i > 0) {
+        ssidlist += ", ";
+      }
+
+      ssidlist += "\"" + ssid + "\""; 
+/*
+      // get extra info
+      const bss_info *bssInfo = WiFi.getScanInfoByIndex(i);
+      String phyMode;
+      const char *wps = "";
+      if (bssInfo) {
+        phyMode.reserve(12);
+        phyMode = F("802.11");
+        String slash;
+        if (bssInfo->phy_11b) {
+          phyMode += 'b';
+          slash = '/';
+        }
+        if (bssInfo->phy_11g) {
+          phyMode += slash + 'g';
+          slash = '/';
+        }
+        if (bssInfo->phy_11n) {
+          phyMode += slash + 'n';
+        }
+        if (bssInfo->wps) {
+          wps = PSTR("WPS");
+        }
+      }
+*/
+      Serial.printf(PSTR("  %02d: [CH %02d] [%02X:%02X:%02X:%02X:%02X:%02X] %ddBm %c %c %-11s %3S %s\n"), i, channel, bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5], rssi, (encryptionType == ENC_TYPE_NONE) ? ' ' : '*', hidden ? 'H' : 'V', phyMode.c_str(), wps, ssid.c_str());
+      yield();
+    }
+  } else {
+    Serial.printf(PSTR("WiFi scan error %d"), scanResult);
+    ssidlist += F("\"WiFi scan error\"]");
+  }
+
+  ws.textAll(ssidlist);
+}
+
+
+void onMQTTMessage(char* topic, byte* payload, unsigned int length) {
+  Serial.print(F("Message arrived ["));
+  Serial.print(topic);
+  Serial.print(F("] "));
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+
+
+
 }
