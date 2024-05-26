@@ -14,6 +14,7 @@ https://randomnerdtutorials.com/esp8266-nodemcu-websocket-server-arduino/
 #include <ESPAsyncWebServer.h>
 //#include <ESP8266mDNS.h>
 #include <AsyncElegantOTA.h>
+#include <PubSubClient.h>
 #include "credentials.h"
 
 
@@ -43,7 +44,7 @@ AsyncWebSocket ws("/ws");
 IPAddress apIP(192, 168, 4, 1);  // Private network address: local & gateway
 
 const char* mqtt_server = MQTT_BROKER_HOST;
-const short* mqtt_port = MQTT_BROKER_PORT
+const short mqtt_port = MQTT_BROKER_PORT;
 WiFiClient espClient;
 PubSubClient client(espClient);
 #define MSG_BUFFER_SIZE	(50)
@@ -605,7 +606,7 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
     char key[20] = {0};
     char value[20] = {0};    
     char * strtokIndx; // this is used by strtok() as an index
-    strtokIndx = strtok(data,",");      // get the first part - the key
+    strtokIndx = strtok((char *)data,",");      // get the first part - the key
     strcpy(key, strtokIndx); // copy it to key
     strtokIndx = strtok(NULL,",");      // get the first part - the value
     strcpy(value, strtokIndx); // copy it to value
@@ -692,7 +693,7 @@ void scanssid() {
         }
       }
 */
-      Serial.printf(PSTR("  %02d: [CH %02d] [%02X:%02X:%02X:%02X:%02X:%02X] %ddBm %c %c %-11s %3S %s\n"), i, channel, bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5], rssi, (encryptionType == ENC_TYPE_NONE) ? ' ' : '*', hidden ? 'H' : 'V', phyMode.c_str(), wps, ssid.c_str());
+ //     Serial.printf(PSTR("  %02d: [CH %02d] [%02X:%02X:%02X:%02X:%02X:%02X] %ddBm %c %c %-11s %3S %s\n"), i, channel, bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5], rssi, (encryptionType == ENC_TYPE_NONE) ? ' ' : '*', hidden ? 'H' : 'V', phyMode.c_str(), wps, ssid.c_str());
       yield();
     }
   } else {
