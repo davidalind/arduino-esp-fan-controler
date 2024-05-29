@@ -8,7 +8,7 @@ https://randomnerdtutorials.com/esp8266-nodemcu-websocket-server-arduino/
 */
 
 // Import required libraries
-#include <EEPROM.h>
+
 #include <ESP8266WiFi.h>
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
@@ -94,9 +94,8 @@ void setup_wifi_ap() {
 
 void setup_wifi_sta() {
   // STA WiFi setup
-  if(eeprom_wifi_enabled) {
-    WiFi.begin(ssid, password);
-
+  if(atoi(get_conf("wifi_enabled").data)) {
+    WiFi.begin(get_conf("wifi_ssid").data, get_conf("wifi_password").data);
   }
 }
 
@@ -104,8 +103,10 @@ void setup_wifi_sta() {
 void setup_mqtt() {
   // add mac adress to client id
   sprintf(mqtt_unique_client_id, "%s-%s", mqtt_client_id, deviceId);
-  client.setServer(mqtt_server, mqtt_port);
-  client.setCallback(onMQTTMessage);
+  if(atoi(get_conf("mqtt_enabled").data)) {
+    client.setServer(get_conf("mqtt_broker_host").data, atoi(get_conf("mqtt_broker_port").data));
+    client.setCallback(onMQTTMessage);
+  }
 }
 
 void reconnect_mqtt() {
