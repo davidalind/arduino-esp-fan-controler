@@ -1,26 +1,81 @@
 
 
+//https://www.tutorialspoint.com/compile_c_online.php
+
+
 typedef struct _conf
     {
-        const *char name;
-        void *data;
+        const char *name;
+        char *data;
+        int len;
+        char *def;
     } t_conf;
 
-
-t_conf conf = [
+t_conf conf[] = {
+  {
+    .name = "magic_string",
+    .len = 5,
+//    .def = {0xA5,0xA5,0xA5,0xA5}
+    .def = "magi"
+  },
   {
     .name = "wifi_ssid",
-    .data = (char *) malloc(sizeof(char) * 32)
+    .len = 33
   },
   {
     .name = "wifi_password",
-    .data = (char *) malloc(sizeof(char) * 32)
+    .len = 33
   },
   {
     .name = "wifi_enabled",
-    .data = (char *) malloc(sizeof(char) * 1)
+    .len = 2,
+    .def = "0"
+  },
+  {
+    .name = "mqtt_broker_port",
+    .len = 5,
+    .def = "1883"
   }
-];
+  
+};
+
+void init_conf() {
+  for (int i = 0; i < sizeof(conf)/sizeof(t_conf); i++) {
+    conf[i].data = calloc(conf[i].len, sizeof(char*));
+    if(conf[i].def != NULL) {
+      strcpy(conf[i].data,conf[i].def);
+    }
+  }
+}
+
+// returns 1 if conf with name is found, else 0
+int *get_conf(char *name, char *dest) {
+  for (int i = 0; i < sizeof(conf)/sizeof(t_conf); i++) {
+    if(!strcmp(name, conf[i].name)) {
+      strcpy(dest,conf[i].data);
+      return 1;
+    }
+  }
+  return 0;
+}
+
+
+
+/*
+int main () {
+
+  init_conf();
+  for (int s = 0; s < sizeof(conf)/sizeof(t_conf); s++) {
+    printf("name: %s, len: %d, data: %s, def: %s\n", conf[s].name, conf[s].len, conf[s].data, conf[s].def);
+  }
+
+  char value[32] = {0};
+  get_conf("magic_string", value);
+  printf("value: %s",value);
+
+   return(0);
+}
+*/
 
 
 
