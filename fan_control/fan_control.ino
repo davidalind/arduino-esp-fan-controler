@@ -38,7 +38,7 @@ AsyncWebSocket ws("/ws");
 IPAddress apIP(192, 168, 4, 1);  // Private network address: local & gateway
 
 const char* mqtt_client_id = MQTT_CLIENTID;
-const char* mqtt_unique_client_id = (char*) malloc(sizeof(deviceId) + sizeof(mqtt_client_id) + 2 * sizeof(char));
+const char* mqtt_unique_client_id = (char*) calloc(strlen(deviceId) + strlen(mqtt_client_id) + 2 * sizeof(char));
 WiFiClient espClient;
 PubSubClient client(espClient);
 #define MSG_BUFFER_SIZE	(50)
@@ -144,19 +144,7 @@ void setup() {
   delay(100);
 
   // setup EEPROM
-  Serial.print(F("Check if EEPROM has valid data..."));
-  if (isvalidEEPROM() {
-    Serial.println(F(" OK"));
-    Serial.print(F("Loading conf..."));
-    readEEPROMconf();
-    Serial.println(F(" OK"));
-    eeprom_valid_data = true;
-  } else {
-    Serial.print(F(" No. Clearing..."));
-    resetEEPROM();
-    writeEEPROMmagicnumber();
-    Serial.println(F(" OK"));
-  }
+  init_conf();
 
   // set a unique device id
   setDeviceId();
@@ -211,24 +199,26 @@ void setup() {
   });
 
   // setup /wifi POST
-  server.on("/wifi", HTTP_POST, [](AsyncWebServerRequest *request) {
+  server.on("/conf", HTTP_GET, [](AsyncWebServerRequest *request) {
     AsyncResponseStream *response = request->beginResponseStream("text/html");
-  
-    if(request->hasParam("wifissid", true)) {
-      AsyncWebParameter* s = request->getParam("wifissid", true);
-      AsyncWebParameter* p = request->getParam("wifipassword", true);
-      AsyncWebParameter* e = request->getParam("wifienabled", true);
 
-      bool ebool = false;
-      if(atoi(e->value().c_str()) > 0 {
-        ebool = true;
+    int params = request->params();
+    for(int i=0;i<params;i++){
+      AsyncWebParameter* p = request->getParam(i);
+      if(!p->isFile()){
+        set_conf(p->name().c_str(), p->value().c_str());
       }
-      writeEEPROMconf_wifi(ebool, s->value().c_str(), p->value().c_str()); 
     }
 
-    response->print(header_html);
-    response->print(wifi_html);
-    response->print(footer_html);
+    if(!conf_initalized) return 0;
+  for (int i = 0; i < sizeof(conf)/sizeof(t_conf); i++) {
+    if(!strcmp(name, conf[i].name)) {
+      return &conf[i];
+    }
+  }
+  return NULL;
+}
+
     request->send(200, response);
   });
   
@@ -242,7 +232,7 @@ void setup() {
   });
 
   // setup /mqtt POST
-  server.on("/mqtt", HTTP_POST, [](AsyncWebServerRequest *request) {
+  server.on("/mqttconf", HTTP_POST, [](AsyncWebServerRequest *request) {
 
     if(request->hasParam("mqttbroker", true)) {
       AsyncWebParameter* b = request->getParam("mqttbroker", true);
@@ -276,7 +266,7 @@ void setup() {
     request->send(200, response);
   });
 
-  server.on("/wifiget", HTTP_GET, [](AsyncWebServerRequest *request) {
+  server.on("/conf", HTTP_GET, [](AsyncWebServerRequest *request) {
     AsyncResponseStream *response = request->beginResponseStream("text/json");
     response->print("{\"wifienabled\":");
     if (wifi_enabled) {
@@ -572,8 +562,56 @@ setDeviceId() {
   //https://arduino-esp8266.readthedocs.io/en/latest/esp8266wifi/station-class.html#macaddress
    uint8_t macAddr[6];
    WiFi.macAddress(macAddr);
-   sprintf(deviceId, %02x%02x%02x%02x%02x%02x", macAddr[0], macAddr[1], macAddr[2], macAddr[3], macAddr[4], macAddr[5]);
+   sprintf(deviceId, "%02x%02x%02x%02x%02x%02x", macAddr[0], macAddr[1], macAddr[2], macAddr[3], macAddr[4], macAddr[5]);
 }
 
+/*
 
+// You must free the result if result is non-NULL.
+char *str_replace(char *orig, char *rep, char *with) {
+    char *result; // the return string
+    char *ins;    // the next insert point
+    char *tmp;    // varies
+    int len_rep;  // length of rep (the string to remove)
+    int len_with; // length of with (the string to replace rep with)
+    int len_front; // distance between rep and end of last rep
+    int count;    // number of replacements
+
+    // sanity checks and initialization
+    if (!orig || !rep)
+        return NULL;
+    len_rep = strlen(rep);
+    if (len_rep == 0)
+        return NULL; // empty rep causes infinite loop during count
+    if (!with)
+        with = "";
+    len_with = strlen(with);
+
+    // count the number of replacements needed
+    ins = orig;
+    for (count = 0; (tmp = strstr(ins, rep)); ++count) {
+        ins = tmp + len_rep;
+    }
+
+    tmp = result = malloc(strlen(orig) + (len_with - len_rep) * count + 1);
+
+    if (!result)
+        return NULL;
+
+    // first time through the loop, all the variable are set correctly
+    // from here on,
+    //    tmp points to the end of the result string
+    //    ins points to the next occurrence of rep in orig
+    //    orig points to the remainder of orig after "end of rep"
+    while (count--) {
+        ins = strstr(orig, rep);
+        len_front = ins - orig;
+        tmp = strncpy(tmp, orig, len_front) + len_front;
+        tmp = strcpy(tmp, with) + len_with;
+        orig += len_front + len_rep; // move to next "end of rep"
+    }
+    strcpy(tmp, orig);
+    return result;
+}
+*/
 
