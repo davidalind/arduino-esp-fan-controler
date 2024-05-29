@@ -16,13 +16,47 @@ https://randomnerdtutorials.com/esp8266-nodemcu-websocket-server-arduino/
 #include <AsyncElegantOTA.h>
 #include <PubSubClient.h>
 #include "credentials.h"
+#include "html.h"
 
+char deviceId[12]; // mac adress w/o :
 
 // EEPROM conf
-#define EEPROM_SSID_START 1
-#define EEPROM_SSID_LEN 32
-#define EEPROM_PASSWORD_START 33
-#define EEPROM_PASSWORD_LEN 32
+//check for valid data. eg if it has been set.
+//https://www.cs.umb.edu/cs341/Lab03/index.html
+bool eeprom_valid_data = false;
+const long eeprom_magic_number[4] = [0xA5,0xA5,0xA5,0xA5];
+const int eeprom_magic_number_start PROGMEM = 1;
+const int eeprom_magic_number_len PROGMEM = sizeof(eeprom_magic_number);
+
+const int eeprom_storage_start PROGMEM = eeprom_magic_number_start + eeprom_magic_number_len;
+
+const int eeprom_wifi_enabled_start PROGMEM = eeprom_storage_start;
+const int eeprom_wifi_enabled_len PROGMEM = 1;
+bool wifi_enabled = false;
+
+const int eeprom_wifi_ssid_start PROGMEM = eeprom_wifi_enabled_start + eeprom_wifi_enabled_len;
+const int eeprom_wifi_ssid_len PROGMEM = 32;
+const char* wifi_ssid = (char*) malloc(eeprom_wifi_ssid_len + 1);
+
+const int eeprom_wifi_password_start PROGMEM = eeprom_wifi_ssid_start + eeprom_wifi_ssid_len;
+const int eeprom_wifi_password_len PROGMEM = 32;
+const char* wifi_password = (char*) malloc(eeprom_wifi_password_len + 1);
+
+const int eeprom_mqtt_enabled_start PROGMEM = eeprom_wifi_password_start + eeprom_wifi_password_len;
+const int eeprom_mqtt_enabled_len PROGMEM = 1;
+bool mqtt_enabled = false;
+
+const int eeprom_mqtt_broker_host_start PROGMEM = eeprom_mqtt_enabled_start + eeprom_mqtt_enabled_len;
+const int eeprom_mqtt_broker_host_len PROGMEM = 50;
+const char* mqtt_broker_host = (char*) malloc(eeprom_mqtt_broker_host_len + 1);
+
+const int eeprom_mqtt_broker_port_start PROGMEM = eeprom_mqtt_broker_host_start + eeprom_mqtt_broker_host_len;
+const int eeprom_mqtt_broker_port_len PROGMEM = 4;
+const char* mqtt_broker_port = (char*) malloc(eeprom_mqtt_broker_port_len + 1);
+
+const int eeprom_storage_end PROGMEM = eeprom_mqtt_broker_port_start + eeprom_mqtt_broker_port_len;
+
+
 
 
 // PWM conf
@@ -37,14 +71,12 @@ const byte TACHO_PIN = D4;
 const char *ap_ssid PROGMEM = AP_SSID;
 const char *ap_password PROGMEM = AP_PASSWORD;
 #define SSID_LIST_MAXLEN = 30;
-char ssid[32];
-char password[32];
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 IPAddress apIP(192, 168, 4, 1);  // Private network address: local & gateway
 
-const char* mqtt_server = MQTT_BROKER_HOST;
-const short mqtt_port = MQTT_BROKER_PORT;
+const char* mqtt_client_id = MQTT_CLIENTID;
+const char* mqtt_unique_client_id = (char*) malloc(sizeof(deviceId) + sizeof(mqtt_client_id) + 2 * sizeof(char));
 WiFiClient espClient;
 PubSubClient client(espClient);
 #define MSG_BUFFER_SIZE	(50)
@@ -67,232 +99,11 @@ unsigned long lasttachopoll = 0;
 
 
 
-const char index_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE HTML><html>
-<head>
-  <title>DACAB Fan Control</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-  html {
-    font-family: Arial, Helvetica, sans-serif;
-    text-align: center;
-  }
-  h1 {
-    font-size: 1.8rem;
-    color: white;
-  }
-  h2{
-    font-size: 1.5rem;
-    font-weight: bold;
-    color: #143642;
-  }
-  .topnav {
-    overflow: hidden;
-    background-color: #143642;
-  }
-  body {
-    margin: 0;
-  }
-  .content {
-    padding: 30px;
-    max-width: 600px;
-    margin: 0 auto;
-  }
-  .card {
-    background-color: #F8F7F9;;
-    box-shadow: 2px 2px 12px 1px rgba(140,140,140,.5);
-    padding-top:10px;
-    padding-bottom:20px;
-  }
-    .textinput {
-    background-color: #FFFFFF;
-    font-size: 24px;
-    text-align: center;
-    box-shadow: 2px 2px 12px 1px rgba(140,140,140,.5);
-    padding-top:10px;
-    padding-bottom:20px;
-  }
-  .button {
-    padding: 15px 50px;
-    font-size: 24px;
-    text-align: center;
-    outline: none;
-    color: #fff;
-    background-color: #0f8b8d;
-    border: none;
-    border-radius: 5px;
-    -webkit-touch-callout: none;
-    -webkit-user-select: none;
-    -khtml-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
-    -webkit-tap-highlight-color: rgba(0,0,0,0);
-   }
-   .state {
-     font-size: 1.5rem;
-     color:#8c8c8c;
-     font-weight: bold;
-   }
-  </style>
-<link rel="icon" href="data:,">
-</head>
-<body>
-  <div class="topnav">
-    <h1>D&Aring;C AB Fan Control</h1>
-  </div>
-  <div class="content">
-    <div class="card">
-      <h2>Speed</h2>
-      <p class="state"><span id="rpm">--</span> RPM</p>
-      <h2>PWM</h2>
-      <p class="state">Duty Cycle: <span id="dutycycle">--</span> %</p>
-    </div>
-
-    <p></p>
-
-    <div class="card">
-      <h2>Set Duty Cycle</h2>
-      <p><input class="textinput" type="text" size="3" id="newdutycycle" onkeydown="senddc()"><span class="state"> %</span></p>
-      <p><button id="setdutycycle" class="button">Send</button></p>
-    </div>
-
-    <p></p>
-
-    <div class="card">
-      <h2>Stationary WiFi</h2>
-      <p class="state">SSID</p>
-      <p><input class="textinput" type="text" size="3" id="ssidtext"></p>
-      <p><button id="setssidtext" class="button">Save SSID</button></p>
-
-      <select name="ssidlist" id="ssidlist"></select>
-      <p><button id="scanssid" class="button">Scan SSID</button></p>
-      <p><button id="setssidselect" class="button">Save SSID</button></p>
-
-      <p><button id="setssid" class="button">Save SSID</button></p>
-      <p class="state">Password</p>
-      <p><input class="textinput" type="text" size="3" id="password"></p>
-      <p><button id="setpassword" class="button">Save password</button></p>
-    </div>
-
-    <p></p>
-
-    <div class="card">
-      <h2>Connection status</h2>
-      <p class="state"><span id="status">--</span></p>
-      <h2>Stationary WiFi status</h2>
-      <p class="state"><span id="wifi">--</span></p>
-      <h2>Free memory</h2>
-      <p class="state"><span id="freemem">--</span></p>
-    </div>
-
-  </div>
-<script>
-  var gateway = `ws://${window.location.hostname}/ws`;
-  var websocket;
-  window.addEventListener('load', onLoad);
-  function initWebSocket() {
-    console.log('Trying to open a WebSocket connection...');
-    websocket = new WebSocket(gateway);
-    websocket.onopen    = onOpen;
-    websocket.onclose   = onClose;
-    websocket.onerror   = onError;
-    websocket.onmessage = onMessage; // <-- add this line
-  }
-  function onOpen(event) {
-    console.log('Connection opened');
-    document.getElementById('status').innerHTML = "Connected";
-  }
-  function onClose(event) {
-    console.log('Connection closed');
-    document.getElementById('status').innerHTML = "Disconnected. Refresh to reconnect.";
-    resetvalues();
-//    setTimeout(initWebSocket, 2000);
-  }
-  function onError(event) {
-    console.log("WebSocket error: ", event);
-    document.getElementById('status').innerHTML = "Error: " & event;
-    resetvalues();
-//    setTimeout(initWebSocket, 2000);
-  }
-  function onMessage(event) {
-    console.log(event.data);
-    var myObj = JSON.parse(event.data);
-    var keys = Object.keys(myObj);
-
-    for (var i = 0; i < keys.length; i++){
-      var key = keys[i];
-      if (key === 'ssidlist')
-        let ssidlist = document.getElementById('ssidlist');
-        let newDefault1 = new Option('Select SSID', null, true, true);
-        newDefault1.disabled = true;
-        ssidlist.add(newDefault1);
-
-        let data = myObj[key];
-        data.forEach((ssid) => {
-          let option = new Option(ssid, ssid);
-          console.log(option);
-          ssidlist.add(option);
-        }
-        document.getElementById('scanssid').disabled = false;
-      } else {
-        document.getElementById(key).innerHTML = myObj[key];
-      }
-    }
-  }
-
-  function onLoad(event) {
-    initWebSocket();
-    initButton();
-  }
-
-  function initButton() {
-    document.getElementById('setdutycycle').addEventListener('click', setdutycycle);
-    document.getElementById('setssidtext').addEventListener('click', setssidtext);
-    document.getElementById('setssidselect').addEventListener('click', setssidselect);
-    document.getElementById('scanssid').addEventListener('click', scanssid);
-    document.getElementById('setpassword').addEventListener('click', setpassword);
-  }
-  function setdutycycle(){
-    websocket.send("dutycycle=" & document.getElementById('newdutycycle').value);
-  }
-  function senddc() {
-    if(event.key === 'Enter') {
-        setdutycycle();        
-    }
-  }
-  function setssidtext(){
-    websocket.send("ssid=" & document.getElementById('ssidtext').value);
-    document.getElementById('ssid').innerHTML = "";
-  }
-  function scanssid(){
-    websocket.send("scanssid=1");
-    document.getElementById('scanssid').disabled = true;
-  }
-  function setssidselect(){
-    var e = document.getElementById('ssidlist');
-    websocket.send("ssid=" & e.options[e.selectedIndex].text);
-  }
-  function setpassword(){
-    websocket.send("password=" & document.getElementById('password').value);
-    document.getElementById('password').innerHTML = "";
-  }
-  function resetvalues(){
-    document.getElementById('dutycycle').innerHTML = "--";
-    document.getElementById('rpm').innerHTML = "--";
-    document.getElementById('freemem').innerHTML = "--";
-  }
-</script>
-</body>
-</html>
-)rawliteral";
-
 // populate select
 // https://stackoverflow.com/questions/73708331/how-to-populate-a-select-dropdown-with-a-list-of-json-values-using-js-fetch
 // ssidlist shall be an array
 
-void setup_wifi() {
-
+void setup_wifi_ap() {
   delay(10);
   // We start by connecting to a WiFi network
   Serial.println();
@@ -301,128 +112,91 @@ void setup_wifi() {
 
   WiFi.mode(WIFI_AP_STA);
  
+  // add mac adress to ssid
+  char uniquessid[sizeof(deviceId) + 1 + sizeof(ap_ssid)];
+  sprintf(uniquessid, "%s-%s", ap_ssid, deviceId);
+
+
   // AP setup
   WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
-  //if(WiFi.softAP(ssid,password)==true)
-  if (WiFi.softAP(ap_ssid, ap_password, 1, 0, 2) == true) {
+  if (WiFi.softAP(uniquessid, ap_password, 1, 0, 2) == true) {
     Serial.print(F("Access Point is Creadted with SSID: "));
-    Serial.println(ap_ssid);
+    Serial.println(uniquessid);
     Serial.print(F("Access Point IP: "));
     Serial.println(WiFi.softAPIP());
   } else {
     Serial.println(F("Unable to Create Access Point"));
   }
-
-  // STA WiFi setup
-  // get cred from eeprom
-  readEEPROM(EEPROM_SSID_START,EEPROM_SSID_LEN,ssid);
-  readEEPROM(EEPROM_PASSWORD_START,EEPROM_PASSWORD_LEN,password);
-  // conf STA
-  WiFi.begin(ssid, password);
-
-/*
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-*/
-  randomSeed(micros());
-
-//  Serial.println("");
-//  Serial.println("WiFi connected");
-//  Serial.println("IP address: ");
-//  Serial.println(WiFi.localIP());
 }
-/*
-char wifi_ssid_private[32];
-char wifi_password_private[32];
-char clientName[10] = "newClient";
-char ipAddr[16] = "172.024.001.001";//Pi Access Point IP-Adr.
-*/
-/*  
-  memset(ssid, 0, sizeof(ssid));
-  memset(password, 0, sizeof(ssid));
-  strcat(wifi_ssid_private, "SSID1234");
-  strcat(wifi_password_private, "PW1234");
-
-  writeEEPROM(0,32,wifi_ssid_private);//32 byte max length
-  writeEEPROM(32,32, wifi_password_private);//32 byte max length
-  writeEEPROM(64,10, clientName);//10 byte max length
-  writeEEPROM(74,16, ipAddr);//16 byte max length
-  // 85 byte saved in total?  
-  Serial.println("everything saved...");
-  readEEPROM(0,32,wifi_ssid_private);
-  readEEPROM(32,32,wifi_password_private);
-  readEEPROM(64,10,clientName);
-  readEEPROM(74,16,ipAddr);
-*/
 
 
-void reconnect() {
+void setup_wifi_sta() {
+  // STA WiFi setup
+  if(eeprom_wifi_enabled) {
+    WiFi.begin(ssid, password);
+
+  }
+}
+
+
+void setup_mqtt() {
+  // add mac adress to client id
+  sprintf(mqtt_unique_client_id, "%s-%s", mqtt_client_id, deviceId);
+  client.setServer(mqtt_server, mqtt_port);
+  client.setCallback(onMQTTMessage);
+}
+
+void reconnect_mqtt() {
   // Loop until we're reconnected
-  while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
+//  while (!client.connected()) {
+//    Serial.print("Attempting MQTT connection...");
     // Create a random client ID
     String clientId = "ESP8266Client-";
     clientId += String(random(0xffff), HEX);
     // Attempt to connect
-    if (client.connect(clientId.c_str())) {
-      Serial.println("connected");
+    if (client.connect(mqtt_unique_client_id)) {
+//      Serial.println("connected");
       // Once connected, publish an announcement...
-      client.publish("outTopic", "hello world");
+//      client.publish("outTopic", "hello world");
       // ... and resubscribe
-      client.subscribe("inTopic");
-    } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
+//      client.subscribe("inTopic");
+    } // else {
+  //    Serial.print("failed, rc=");
+  //    Serial.print(client.state());
+  //    Serial.println(" try again in 5 seconds");
       // Wait 5 seconds before retrying
-      delay(5000);
-    }
-  }
+  //    delay(5000);
+  //  }
+//  }
 }
 
 
-
-
-
-//startAdr: offset (bytes), writeString: String to be written to EEPROM
-void writeEEPROM(int startAdr, int laenge, char* writeString) {
-  EEPROM.begin(512); //Max bytes of eeprom to use
-  yield();
-  Serial.println();
-  Serial.print("writing EEPROM: ");
-  //write to eeprom 
-  for (int i = 0; i < laenge; i++)
-    {
-      EEPROM.write(startAdr + i, writeString[i]);
-      Serial.print(writeString[i]);
-    }
-  EEPROM.commit();
-  EEPROM.end();           
-}
-
-void readEEPROM(int startAdr, int maxLength, char* dest) {
-  EEPROM.begin(512);
-  delay(10);
-  for (int i = 0; i < maxLength; i++)
-    {
-      dest[i] = char(EEPROM.read(startAdr + i));
-    }
-  EEPROM.end();    
-  Serial.print("ready reading EEPROM:");
-  Serial.println(dest);
-}
-  
 
 
 
 void setup() {
+//  randomSeed(micros());
 
-  Serial.begin(9600);
+  Serial.begin(115200);
+  delay(100);
 
-  pinMode(LED_BUILTIN, OUTPUT);
+  // setup EEPROM
+  Serial.print(F("Check if EEPROM has valid data..."));
+  if (isvalidEEPROM() {
+    Serial.println(F(" OK"));
+    Serial.print(F("Loading conf..."));
+    readEEPROMconf();
+    Serial.println(F(" OK"));
+    eeprom_valid_data = true;
+  } else {
+    Serial.print(F(" No. Clearing..."));
+    resetEEPROM();
+    writeEEPROMmagicnumber();
+    Serial.println(F(" OK"));
+  }
 
+  // set a unique device id
+  setDeviceId();
 
   // Setup PWM output
   pinMode(PWM_PIN, OUTPUT);      // Configure PWM pin to output
@@ -432,15 +206,14 @@ void setup() {
 
   // setup tacho
   pinMode(TACHO_PIN, INPUT_PULLUP);  // Configure TACHO pin to output
+  // attachInterrupt triggers on noise. reverting to polling.
   // attachInterrupt(digitalPinToInterrupt(TACHO_PIN), counttacho, FALLING); // 2 interrupts per revolution
 
-
   // setup WiFi AP
-  setup_wifi();
+  setup_wifi_ap();
 
-  // setup MQTT
-  client.setServer(mqtt_server, mqtt_port);
-  client.setCallback(onMQTTMessage);
+  // setup WiFi STA
+  setup_wifi_sta();
 
   // setup websocket
   ws.onEvent(webSocketEvent);  // if there's an incomming websocket message, go to function 'webSocketEvent'
@@ -455,10 +228,126 @@ void setup() {
   Serial.println(".local");
   */
 
-  // setup webserver
+  // setup /
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/html", index_html);
+    AsyncResponseStream *response = request->beginResponseStream("text/html");
+    response->print(header_html);
+    response->print(index_html);
+    response->print(footer_html);
+    // https://github.com/me-no-dev/ESPAsyncWebServer#send-large-webpage-from-progmem-containing-templates
+    request->send(200, response);
   });
+
+  // setup /wifi GET
+  server.on("/wifi", HTTP_GET, [](AsyncWebServerRequest *request) {
+    AsyncResponseStream *response = request->beginResponseStream("text/html");
+    response->print(header_html);
+    response->print(wifi_html);
+    response->print(footer_html);
+    request->send(200, response);
+  });
+
+  // setup /wifi POST
+  server.on("/wifi", HTTP_POST, [](AsyncWebServerRequest *request) {
+    AsyncResponseStream *response = request->beginResponseStream("text/html");
+  
+    if(request->hasParam("wifissid", true)) {
+      AsyncWebParameter* s = request->getParam("wifissid", true);
+      AsyncWebParameter* p = request->getParam("wifipassword", true);
+      AsyncWebParameter* e = request->getParam("wifienabled", true);
+
+      bool ebool = false;
+      if(atoi(e->value().c_str()) > 0 {
+        ebool = true;
+      }
+      writeEEPROMconf_wifi(ebool, s->value().c_str(), p->value().c_str()); 
+    }
+
+    response->print(header_html);
+    response->print(wifi_html);
+    response->print(footer_html);
+    request->send(200, response);
+  });
+  
+  // setup /mqtt GET
+  server.on("/mqtt", HTTP_GET, [](AsyncWebServerRequest *request) {
+    AsyncResponseStream *response = request->beginResponseStream("text/html");
+    response->print(header_html);
+    response->print(mqtt_html);
+    response->print(footer_html);
+    request->send(200, response);
+  });
+
+  // setup /mqtt POST
+  server.on("/mqtt", HTTP_POST, [](AsyncWebServerRequest *request) {
+
+    if(request->hasParam("mqttbroker", true)) {
+      AsyncWebParameter* b = request->getParam("mqttbroker", true);
+      AsyncWebParameter* p = request->getParam("mqttport", true);
+      AsyncWebParameter* e = request->getParam("mqttenabled", true);
+
+      bool ebool = false;
+      if(atoi(e->value().c_str()) > 0 {
+        ebool = true;
+      }
+      writeEEPROMconf_mqtt(ebool, b->value().c_str(), p->value().c_str()); 
+    }
+
+    AsyncResponseStream *response = request->beginResponseStream("text/html");
+    response->print(header_html);
+    response->print(mqtt_html);
+    response->print(footer_html);
+    request->send(200, response);
+  });
+
+
+  server.on("/mqttget", HTTP_GET, [](AsyncWebServerRequest *request) {
+    AsyncResponseStream *response = request->beginResponseStream("text/json");
+    response->print("{\"mqttenabled\":");
+    if (mqtt_enabled) {
+      response->print("true");
+    } else {
+      response->print("false");
+    }
+    response->print(", \"mqtthost\":\"" + mqtt_broker_host + "\", "mqttport":\"" + mqtt_broker_port + "\"}");
+    request->send(200, response);
+  });
+
+  server.on("/wifiget", HTTP_GET, [](AsyncWebServerRequest *request) {
+    AsyncResponseStream *response = request->beginResponseStream("text/json");
+    response->print("{\"wifienabled\":");
+    if (wifi_enabled) {
+      response->print("true");
+    } else {
+      response->print("false");
+    }
+    response->print(", \"wifissid\":\"" + wifi_ssid + "\"}");
+    request->send(200, response);
+  });
+
+
+  server.on("/wifiscan", HTTP_GET, [](AsyncWebServerRequest *request) {
+    AsyncResponseStream *response = request->beginResponseStream("text/json");
+    response->print("{");
+
+    WiFi.disconnect();
+    delay(100);
+    int n = WiFi.scanNetworks();
+    for (int i = 0; i < n; i++)     {
+      response->print("\"" + WiFi.SSID(i) "\":1");
+      if(i<n-1) { response->print(","); }
+    }
+    response->print("}");
+    request->send(200, response);
+  });
+
+
+ // /wifi
+ // /wifiget
+ // /wifiscan
+ // /mqtt
+ // /mqttget
+ 
 
   // Start ElegantOTA
   AsyncElegantOTA.begin(&server);  
@@ -466,6 +355,10 @@ void setup() {
   // Start web server
   server.begin();
 }
+
+
+
+
 
 void loop() {
   // check if dutu cycle input from Arduino CLI
@@ -481,7 +374,7 @@ void loop() {
 
   // mqtt
   if (!client.connected()) {
-    reconnect();
+    reconnect_mqtt();
   }
   client.loop();
 
@@ -530,25 +423,15 @@ void loop() {
     Serial.println(msg);
     client.publish("outTopic", msg);
 */
-
+//Serial.println(WiFi.localIP());
     if (WiFi.status() != WL_CONNECTED) {
       ws.textAll("{\"wifi\":\"not connected\"}");
     } else {
-      ws.textAll("{\"wifi\":\"connected\"}");
+      ws.textAll("{\"wifi\":\"connected (IP: " + WiFi.localIP() + "\"}");
     }
 
-
-
-    // blink onboard LED
-    if (ledState == LOW) {
-      ledState = HIGH;
-    } else {
-      ledState = LOW;
-    }
-    digitalWrite(LED_BUILTIN, ledState);
   }
 
-  
 
   ws.cleanupClients();
   //  MDNS.update();
@@ -619,6 +502,7 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
       analogWrite(PWM_PIN, dutycycle);
       ws.textAll("{\"dutycycle\":" + String(dutycycle) + "}");
     }
+/*
     else if (strcmp(key, (const char*)"ssid") == 0) {
       strcpy(ssid, value);
       writeEEPROM(EEPROM_SSID_START,EEPROM_SSID_LEN,value);
@@ -630,6 +514,7 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
       strcpy(password, value);
       writeEEPROM(EEPROM_PASSWORD_START,EEPROM_PASSWORD_LEN,value);
     }
+*/
   }
 }
 
@@ -706,14 +591,137 @@ void scanssid() {
 
 
 void onMQTTMessage(char* topic, byte* payload, unsigned int length) {
-  Serial.print(F("Message arrived ["));
+  Serial.print(F("MQTT: "));
   Serial.print(topic);
-  Serial.print(F("] "));
+  Serial.print(F(" <- "));
   for (int i = 0; i < length; i++) {
     Serial.print((char)payload[i]);
   }
   Serial.println();
-
-
-
 }
+
+
+
+
+
+void readEEPROMconf() {
+  readEEPROMconf_mqtt();
+  readEEPROMconf_wifi();
+}
+
+void readEEPROMconf_mqtt() {
+  if (readEEPROM(eeprom_mqtt_enabled_start) > 1) {
+    mqtt_enabled = true;
+  } else {
+    mqtt_enabled = false;
+  }
+  readEEPROM(eeprom_mqtt_broker_host_start, eeprom_mqtt_broker_host_len, mqtt_broker_host);
+  mqtt_broker_host[eeprom_mqtt_broker_host_len + 1] = 0;
+  readEEPROM(eeprom_mqtt_broker_port_start, eeprom_mqtt_broker_port_len, mqtt_broker_port);
+  mqtt_broker_port[eeprom_mqtt_broker_port_len + 1] = 0;
+}
+
+void readEEPROMconf_wifi() {
+  if (readEEPROM(eeprom_wifi_enabled_start) > 1) {
+    wifi_enabled = true;
+  } else {
+    wifi_enabled = false;
+  }
+  readEEPROM(eeprom_wifi_ssid_start, eeprom_wifi_ssid_len, wifi_ssid);
+  wifi_ssid[eeprom_wifi_ssid_len + 1] = 0;
+  readEEPROM(eeprom_wifi_password_start, eeprom_wifi_password_len, wifi_password);
+  wifi_password[eeprom_wifi_password_len + 1] = 0;
+}
+
+void writeEEPROMconf_mqtt(bool enabled, char* host, char* port) {
+  if (enabled) {
+    writeEEPROM(eeprom_mqtt_enabled_start, (char)1);
+  } else {
+    writeEEPROM(eeprom_mqtt_enabled_start, (char)0);
+  }
+  writeEEPROM(eeprom_mqtt_broker_host_start, eeprom_mqtt_broker_host_len, host);
+  writeEEPROM(eeprom_mqtt_broker_port_start, eeprom_mqtt_broker_port_len, port);
+}
+
+void writeEEPROMconf_wifi(bool enabled, char* ssid, char* password) {
+  if (enabled) {
+    writeEEPROM(eeprom_wifi_enabled_start, (char)1);
+  } else {
+    writeEEPROM(eeprom_wifi_enabled_start, (char)0);
+  }
+  writeEEPROM(eeprom_wifi_ssid_start, eeprom_wifi_ssid_len, ssid);
+  writeEEPROM(eeprom_wifi_password_start, eeprom_wifi_password_len, password);
+}
+  
+
+// check if we have valid data in EEPROM
+bool isvalidEEPROM() {
+  // check if EEPROM contains valid data
+  for (int i = 0; i < eeprom_magic_number_len; i++) {
+    if (readEEPROM(eeprom_magic_number_start + i) != eeprom_magic_number[i]) return false;
+  }
+  return true;
+}
+
+
+
+// write null to EEPROM
+void resetEEPROM() {
+  for (int i = eeprom_storage_start; i < eeprom_storage_end + 1; i++) {
+    writeEEPROM(i, char(0));
+  }
+}
+
+void writeEEPROMmagicnumber() {
+  // check if EEPROM contains valid data
+  for (int i = 0; i < eeprom_magic_number_len; i++) {
+    writeEEPROM(eeprom_magic_number_start + i, eeprom_magic_number[i]);
+  }
+}
+
+void writeEEPROM(int Adr, char data) {
+  EEPROM.write(Adr, data);
+}
+
+//startAdr: offset (bytes), writeString: String to be written to EEPROM
+void writeEEPROM(int startAdr, int laenge, char* writeString) {
+  EEPROM.begin(512); //Max bytes of eeprom to use
+  yield();
+  Serial.println();
+  Serial.print("writing EEPROM: ");
+  //write to eeprom 
+  for (int i = 0; i < laenge; i++)
+    {
+      writeEEPROM(startAdr + i, writeString[i]);
+      Serial.print(writeString[i]);
+    }
+  EEPROM.commit();
+  EEPROM.end();           
+}
+
+char readEEPROM(int Adr) {
+  return char(EEPROM.read(Adr)
+}
+
+void readEEPROM(int startAdr, int maxLength, char* dest) {
+  EEPROM.begin(512);
+  delay(10);
+  for (int i = 0; i < maxLength; i++)
+    {
+      dest[i] = readEEPROM(startAdr + i);
+    }
+  EEPROM.end();    
+  Serial.print("ready reading EEPROM:");
+  Serial.println(dest);
+}
+
+
+setDeviceId() {
+  //https://arduino-esp8266.readthedocs.io/en/latest/esp8266wifi/station-class.html#macaddress
+   uint8_t macAddr[6];
+   WiFi.macAddress(macAddr);
+   sprintf(deviceId, %02x%02x%02x%02x%02x%02x", macAddr[0], macAddr[1], macAddr[2], macAddr[3], macAddr[4], macAddr[5]);
+}
+
+
+
