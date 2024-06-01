@@ -194,28 +194,46 @@ const char index_html[] PROGMEM = R"rawliteral(
 // /mqtt      post variables?
 // /mqttget   return current mqtt settings as json
 const char mqtt_html[] PROGMEM = R"rawliteral(
+<form id="conf">
  <div class="card">
   <h2>MQTT</h2>
-  <p><input type="checkbox" id="mqttenabled"> Enabled</p>
+  <p><input type="checkbox" id="mqtt_enabled"> Enabled</p>
   <p>Broker/p>
-  <p><input class="textinput" type="text" size="20" id="mqtthost"></p>
+  <p><input class="textinput" type="text" size="20" id="mqtt_broker_host"></p>
   <p>Port (default: 1883)/p>
-  <p><input class="textinput" type="text" size="4" id="mqttport"></p>
-  <p><button id="savemqtt" class="button">Save</button></p>
+  <p><input class="textinput" type="text" size="4" id="mqtt_broker_port"></p>
+  <p><button id="mqtt_save" class="button">Save</button></p>
  </div>
+</form>
 
 <script>
   function onLoad(event) {
     initButton();
+    getconf(new URLSearchParams());
   }
-
   function initButton() {
-    document.getElementById('savemqtt').addEventListener('click', savemqtt);
+    document.getElementById('mqtt_save').addEventListener('click', conf);
   }
-
-  function savemqtt(){
+  function saveconf(){
     websocket.send("dutycycle=" & document.getElementById('newdutycycle').value);
+    document.getElementById('mqtt_save').innerHTML = "Saving...";
+    document.getElementById('mqtt_save').disabled = true;
+    getconf(new URLSearchParams(new FormData(document.getElementById("form"))););
+    document.getElementById('mqtt_save').disabled = false;
   }
+  function getconf(data) {
+   fetch("/conf", {
+    method: 'get',
+    body: data,
+  })
+   .then(res => res.json())
+   .then(data => {
+    data.forEach(conf => {
+      document.getElementById(conf.name)
+      
+    });
+  });
+ }
 </script>
 )rawliteral";
 
