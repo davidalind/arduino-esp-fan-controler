@@ -1,5 +1,14 @@
 
 
+/*
+header_html
+footer_html
+index_html
+wifi_html
+mqtt_html
+*/
+
+
 const char header_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html><html>
 <head><title>Fan Control</title>
@@ -20,16 +29,23 @@ p {
 .card {
  background-color: #F8F7F9;
  padding:10px;
- text-align: center;
  margin-top:20px;
 }
 .textinput {
  background-color: #FFFFFF;
  font-size: 18px;
  padding:5px;
- text-align: center;
+ width:250px;
 }
- 
+.selectinput {
+ background-color: #FFFFFF;
+ font-size: 18px;
+ padding:5px;
+ width:250px;
+}
+input[type="checkbox"] {
+    zoom: 1.5;
+}
 .button {
  padding: 10px 30px;
  font-size: 24px;
@@ -55,7 +71,7 @@ p {
  color: white;
  padding: 14px 16px;
  text-decoration: none;
- font-size: 17px;
+ font-size: 21px;
  display: block;
 }
 
@@ -86,6 +102,7 @@ p {
   <a href="/">Dashboard</a>
   <a href="/wifi">WiFi</a>
   <a href="/mqtt">MQTT</a>
+  <a href="/update">Update FW</a>  
  </div>
  <a href="javascript:void(0);" class="icon" onclick="toggleMenu()">&#9776;</a>
 </div>
@@ -242,55 +259,146 @@ const char mqtt_html[] PROGMEM = R"rawliteral(
 
 
 const char wifi_html[] PROGMEM = R"rawliteral(
- <div>
-  <p>Configure this if you want the device to connect to an existing WiFi. Disable if you want to use access point only. Acess point is always enabled.</p>
+%HEADER%
+ <div class="card">
+  <h2>Connect to WiFi</h2>
+  <p>Enable if you want the device to connect to an existing 2.4 GHz WiFi network.</p>
+  <p>Access point is always enabled.</p>
  </div>
  <div class="card">
-  <h2>Stationary WiFi</h2>
-  <p><input type="checkbox" id="wifienabled"> Enabled</p>
-  <p>SSID/p>
-  <p><input class="textinput" type="text" size="20" id="wifissid"></p>
-  <p>Password/p>
-  <p><input class="textinput" type="text" size="4" id="wifipassword"></p>
-  <p><button id="savemqtt" class="button">Save</button></p>
+ <p><span id="message"></span></p>
+ </div>
 
-  <p>Scan and select from list to populate SSID input above.</p>
-  <p><button id="scanssid" class="button">Scan SSID</button></p>
-  <select name="ssidlist" id="ssidlist"></select>
+ <div class="card">
+  <form id="conf_form">
+  <p>Network list<br>
+  <select class="selectinput" name="wifi_ssid_list" id="wifi_ssid_list"></select></p>
+  <div id="ssidinput" style="display:block"><p>SSID<br>
+  <input class="textinput" type="text" name="wifi_ssid" id="wifi_ssid"></p></div>
+  <p>Password<br>
+  <input class="textinput" type="text" name="wifi_password" id="wifi_password"></p>
+  <p><input  type="checkbox" name="wifi_enabled" id="wifi_enabled"> WiFi Enabled</p>
+  <p><button type="button" id="do_save" class="button">Save</button></p>
+  </form>
  </div>
 
 
 <script>
- function wifiscan(){
-  document.getElementById('scanssid').innerHTML = "Scanning...";
-  document.getElementById('scanssid').disabled = true;
-  //clear list
-  var i, L = document.getElementById('ssidlist').options.length - 1;
-  for(i = L; i >= 0; i--) {
-   document.getElementById('ssidlist').remove(i);
+
+window.addEventListener('load', onLoad);
+
+function do_wifi_ssid_selected(){
+  var e = document.getElementById("wifi_ssid_list");
+  if(e.options[e.selectedIndex].value === "showssid") {
+    document.getElementById("ssidinput").style.display = "block";
+  } else {
+    document.getElementById("ssidinput").style.display = "none";
+    document.getElementById("wifi_ssid").value = e.options[e.selectedIndex].value;
   }
-  let ssids = document.getElementById('ssidlist');
-  fetch('/wifiscan')
+}
+
+function do_save(){
+  console.log("saving");
+  document.getElementById('do_save').innerHTML = "Saving...";
+  document.getElementById('do_save').disabled = true;
+
+  var formData = new FormData(document.getElementById('conf_form'));
+  
+	let wifi_enabled = '0';
+
+  const params = new URLSearchParams();
+  for (const pair of new FormData(document.getElementById("conf_form"))) {
+    console.log("pair[0]" + pair[0]);
+    console.log("pair[1]" + pair[1]);    
+	if (pair[0] == "wifi_enabled") {
+		wifi_enabled = '1';
+	} else if (pair[1] != '') {
+		params.append(pair[0], pair[1]);
+	}
+  }
+  params.append("wifi_enabled", wifi_enabled);
+
+  if(params.get("wifi_ssid")) {
+	  getconf(params);
+  } else {
+    document.getElementById('message').innerHTML = "SSID cannot be empty.";
+	}
+
+  document.getElementById('do_save').innerHTML = "Save";
+  document.getElementById('do_save').disabled = false;
+}
+
+function getconf(params) {
+  console.log("conf params:" + params.toString());
+  fetch("/conf?" + params.toString())
+    .then(res => res.json())
+    .then(data => {
+      for (const conf of data.conf) {
+        console.log("setting input: " + conf.name + " to: " + conf.value);
+      
+        if(document.getElementById(conf.name)) {
+        if (conf.name.endsWith('_enabled')) {
+          if (conf.value == '1') {  
+            document.getElementById(conf.name).checked = true;
+          } else {
+            document.getElementById(conf.name).checked = false;
+          }
+        } else {
+          document.getElementById(conf.name).value = conf.value;
+        }
+      }
+    }
+
+    if (data.hasOwnProperty('message')) {
+     document.getElementById('message').innerHTML = data.message;
+    }
+  });
+}
+
+function wifiscan() {
+//  document.getElementById('do_wifi_scan_ssid').innerHTML = "Scanning...";
+//  document.getElementById('do_wifi_scan_ssid').disabled = true;
+
+  //clear list
+  var i, L = document.getElementById('wifi_ssid_list').options.length - 1;
+  for(i = L; i >= 0; i--) {
+   document.getElementById('wifi_ssid_list').remove(i);
+  }
+
+  let wifi_ssid_list = document.getElementById('wifi_ssid_list');
+  fetch("/wifiscan")
    .then(res => res.json())
    .then(data => {
-    data.forEach(ssid => {
-     let option = new Option(ssid, ssid);
-     ssidlist.add(option);
-    });
+    let option = new Option("Enter SSID or select...", "showssid");    
+    wifi_ssid_list.add(option);
+    for (const n of data.networks) {
+      console.log("network ssid: " + n.ssid + " rssi: " + n.rssi);
+      let option = new Option(n.ssid + " (" + n.rssi + "dBm)", n.ssid);
+      wifi_ssid_list.add(option);
+    }
+
+    if (data.hasOwnProperty('message')) {
+     document.getElementById('message').innerHTML = data.message;
+    }
   });
-  document.getElementById('scanssid').disabled = false;
+
+//  document.getElementById('do_wifi_scan_ssid').innerHTML = "Scan SSID";
+//  document.getElementById('do_wifi_scan_ssid').disabled = false;
+}
+
+function onLoad(event) {
+  console.log("init btn");
+  initButton();  
+  console.log("init get conf");
+  getconf(new URLSearchParams());
+  wifiscan();
  }
- function onLoad(event) {
-  initButton();
- }
+
  function initButton() {
-  document.getElementById('scanssid').addEventListener('click', wifiscan);
-  document.getElementById("list").onchange = ssidselected;
- }
- function ssidselected(){
-  var e = document.getElementById("ssidlist");
-  document.getElementById("wifissid").value = e.options[e.selectedIndex].text);
+  document.getElementById('do_save').addEventListener('click', do_save);
+  document.getElementById("wifi_ssid_list").onchange = do_wifi_ssid_selected;
  }
 </script>
+%FOOTER%
 )rawliteral";
 
