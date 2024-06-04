@@ -21,6 +21,8 @@ https://randomnerdtutorials.com/esp8266-nodemcu-websocket-server-arduino/
 #include "html.h"
 #include "eepromconf.h"
 
+char *uniquessid;
+
 
 const char *ap_ssid PROGMEM = AP_SSID;
 const char *ap_password PROGMEM = AP_PASSWORD;
@@ -31,7 +33,7 @@ IPAddress subnet(255,255,255,0);
 char *response_buf;
 int response_maxLen = 0;
 
-
+int lastnetworkscan = 0;
 
 void setup_wifi_ap() {
   delay(10);
@@ -48,7 +50,7 @@ void setup_wifi_ap() {
   Serial.println(strlen(ap_ssid));
 */
 
-  char uniquessid[sizeof(macAddr)*2 + 1 + strlen(ap_ssid)+1];
+  uniquessid = (char *)calloc(sizeof(macAddr)*2 + 1 + strlen(ap_ssid)+1, sizeof(char));
   sprintf(uniquessid, "%s-%02x%02x%02x%02x%02x%02x\0", ap_ssid, macAddr[0], macAddr[1], macAddr[2], macAddr[3], macAddr[4], macAddr[5]);
   Serial.print("uniquessid: ");
   Serial.println(uniquessid);
@@ -80,15 +82,62 @@ void setup_wifi_ap() {
   }
 }
 
-
+// STA WiFi setup
 void setup_wifi_sta() {
-  // STA WiFi setup
+  // start by doing a scan for avail networks
   WiFi.disconnect();
-  delay(100);
+  delay(200);
   WiFi.scanNetworks(true);
-//  if(atoi(get_conf((char *)"wifi_enabled").data)) {
-//    WiFi.begin(get_conf((char *)"wifi_ssid").data, get_conf((char *)"wifi_password").data);
+
+
+//  if(atoi(get_conf("wifi_enabled").data)) {
+//    WiFi.begin(get_conf("wifi_ssid").data, get_conf("wifi_password").data);
 //  }
+}
+/*
+typedef enum {
+    WL_NO_SHIELD        = 255,   // for compatibility with WiFi Shield library
+    WL_IDLE_STATUS      = 0,
+    WL_NO_SSID_AVAIL    = 1,
+    WL_SCAN_COMPLETED   = 2,
+    WL_CONNECTED        = 3,
+    WL_CONNECT_FAILED   = 4,
+    WL_CONNECTION_LOST  = 5,
+    WL_WRONG_PASSWORD   = 6,
+    WL_DISCONNECTED     = 7
+} wl_status_t;
+*/
+
+String get_wifi_status_str() {
+  String status = "";
+  int s = WiFi.status();
+  switch(s) {
+    case WL_IDLE_STATUS:
+      status = "Idle.";
+      break;    
+    case WL_DISCONNECTED:
+      status = "Disconnected.";
+      break;
+    case WL_CONNECTED:
+      status = "Connected to " + WiFi.SSID() + " (Local IP: " + WiFi.localIP().toString() + ")";
+      break;
+    case WL_NO_SSID_AVAIL:
+      status = "AP not found.";
+      break;
+    case WL_CONNECT_FAILED:
+      status = "Connecting failed.";
+      break;
+    case WL_CONNECTION_LOST:
+      status = "Connection lost.";
+      break;      
+    case WL_WRONG_PASSWORD:
+      status = "Wrong password.";
+      break;
+    default:
+      status = "Connecting failed: " + String(s);
+      break;
+  }
+  return status;
 }
 
 
@@ -133,6 +182,18 @@ void setup() {
 */
 
 
+
+/*
+{
+  "messages": [
+    { "type": "ok", "text": "Configuration saved."}
+  ]
+  "conf": [
+    { "name": "mqtt_broker_port", "value": "1883"},
+    ...
+  ]
+}
+*/
 //TODO: change to String response (see wifiscan)
   // setup /conf GET
   server.on("/conf", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -142,25 +203,21 @@ void setup() {
     for(int i=0;i<params;i++){
       AsyncWebParameter* p = request->getParam(i);
       if(!p->isFile()){
-        Serial.println("set conf:");
-        Serial.println(p->name().c_str());
+        Serial.print("set conf: ");
+        Serial.print(p->name().c_str());
+        Serial.print(", ");
         Serial.println(p->value().c_str());
         set_conf(p->name().c_str(), p->value().c_str());
       }
     }
 
     if(params > 0 && conf_initalized) {
-      response->print(F("\"message\":\"Configuration saved.\","));
+      response->print(F("\"messages\": [ "));
+      response->print(F("{\"type\":\"ok\", \"text\":\"Configuration saved.\"}"));
+      response->print(F("],"));
     }
 
-/*
-{
-  "message": "Configuration saved.",
-  "conf": [
-    { "name": "mqtt_broker_port", "value": "1883"}
-  ]
-}
-*/
+
     response->print(F("\"conf\": [ "));
     if(conf_initalized) {
       int len = sizeof(conf)/sizeof(t_conf);
@@ -190,12 +247,17 @@ void setup() {
 
 
 
+
   /*
   {
-    "message": "Error: SSIB scan failed.",
+    "messages": [
+      { "type": "ok", "text": "Error: SSID scan failed."},
+      { "type": "fail", "text": "hej"}
+    ]
+    
     "networks": [
       { "ssid": "asus", "rssi": "-65"},
-      { "ssid": "cisco", "rssi": "-35"},
+      { "ssid": "cisco", "rssi": "-35"}
     ]
   }
   */
@@ -264,26 +326,78 @@ void setup() {
 // https://github.com/me-no-dev/ESPAsyncWebServer/issues/85
   server.on("/wifiscan", HTTP_GET, [](AsyncWebServerRequest *request){
     String json = "{";
-    json += "\"networks\": [ ";
-    int n = WiFi.scanComplete();
-    if(n == -2){
-      WiFi.scanNetworks(true);
-    } else if(n){
+
+    // check if we need to send messages
+    int m = 0;
+    json += F("\"messages\": [ ");
+    if (WiFi.status() == WL_CONNECTED) {
+      json += F("{\"type\":\"fail\", \"text\":\"Warning: Cannot scan for networks when connected to network. SSID list might be outdated. Disable WiFi and try again.\"}");
+      m++;
+    }
+    
+    int n = lastnetworkscan;
+
+    if (n<1) {
+      if(m) json += F(",");
+      json += F("{\"type\":\"fail\", \"text\":\"No networks found.\"}");
+    }
+
+    json += F("]");
+
+    // build network json
+    if(n) {
+      json += F(", \"networks\": [ ");
       for (int i = 0; i < n; ++i){
-        if(i) json += ",";
-        json += "{";
+        if(i) json += F(",");
+        json += F("{");
         json += "\"ssid\":\""+WiFi.SSID(i)+"\"";
         json += ", \"rssi\":\""+String(WiFi.RSSI(i))+"\"";
-        json += "}";
+        json += F("}");
       }
-      WiFi.scanDelete();
-      if(WiFi.scanComplete() == -2){
-        WiFi.scanNetworks(true);
-      }
+      json += F("]");
     }
-    json += "]";
-    json += "}";    
-    request->send(200, "text/json", json);
+
+    // delete scan result and trigger rescan for networks
+    if (WiFi.status() == WL_DISCONNECTED) {
+      WiFi.scanDelete();
+      WiFi.scanNetworks(true);
+    }
+
+    json += F("}");    
+    request->send(200, F("text/json"), json);
+    json = String();
+  });
+
+
+
+  /*
+  {
+    "status": [
+      { "name": "wifi_status": text: "[WiFi] Connected to: laban."},
+      ...
+    ]
+  }
+  */
+  server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request){
+    String json = "{";
+
+    json += F("\"status\": [ ");
+    
+    json += F("{\"name\":\"wifi_status\",");
+    json += F("\"text\":\"WiFi: ") + get_wifi_status_str() + F("\"}");
+    json += F(",");
+    json += F("{\"name\":\"client_id\",");
+    json += F("\"text\":\"Client ID: ") + String(uniquessid) + F("\"}");
+    json += F(",");
+    json += F("{\"name\":\"free_memory\",");
+    json += F("\"text\":\"Free memory: ") + String(ESP.getFreeHeap()) + F("\"}");
+
+
+    json += F("]");
+    json += F("}");    
+
+    request->send(200, F("text/json"), json);
+
     json = String();
   });
 
@@ -299,8 +413,48 @@ void setup() {
 
 
 
+long last_connection_attempt = 0;
+long connection_attempt_timeout = 30000; // ms
+bool connection_attempt_started = false;
 
 void loop() {
+
+  if (WiFi.status() == WL_CONNECTED && atoi(get_conf("wifi_enabled")->data) == 0) {
+    Serial.println("disconnecting.");
+    WiFi.disconnect();
+    delay(100);
+  }
+
+  int n = WiFi.scanComplete();
+  if (n>-1) {
+      lastnetworkscan = n;
+  }
+
+  if((WiFi.getMode() & WIFI_STA) &&           // check we're in staion mode
+    atoi(get_conf("wifi_enabled")->data) &&   // check if wifi is enabled in conf
+    WiFi.status() != WL_CONNECTED &&          // check we're not already connected
+    n != -1 &&                                // check ssid scan is not running
+    !connection_attempt_started)
+  {
+    Serial.print("connecting...");
+    WiFi.begin(get_conf("wifi_ssid")->data, get_conf("wifi_password")->data);
+    connection_attempt_started = true;
+    last_connection_attempt = millis();
+
+  }
+
+  if (connection_attempt_started) {
+      if (WiFi.status() == WL_CONNECTED) {
+        Serial.println(" connected");
+        connection_attempt_started = false;
+      }
+      if (millis() > last_connection_attempt + connection_attempt_timeout) {
+        connection_attempt_started = false;
+      }
+  }
+
+
+
   //Serial.print(".");
   /*
   Serial.print("mqtt_broker_port: ");

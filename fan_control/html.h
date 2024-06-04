@@ -31,6 +31,15 @@ p {
  padding:10px;
  margin-top:20px;
 }
+.status {
+ font-size: 12px;
+}
+.fail {
+ background-color: #FF8080;
+}
+.ok {
+ background-color: #80FF80;
+}
 .textinput {
  background-color: #FFFFFF;
  font-size: 18px;
@@ -121,6 +130,31 @@ function toggleMenu() {
 
 
 const char footer_html[] PROGMEM = R"rawliteral(
+<div class="card">
+  <div class="status" id="status">
+  </div>
+</div>  
+
+<script>
+(function(){
+  var f = function() {
+    fetch("/status")
+      .then(res => res.json())
+      .then(data => {
+        let div = document.getElementById("status");
+        if(div) {
+          div.innerHTML = "";
+          for (const s of data.status) {
+            div.innerHTML += s.text + "<br>";
+          }
+        }
+    });
+  };
+  window.setInterval(f, 5000);
+  f();
+})();
+</script>
+
 </div>
 </body>
 </html>
@@ -263,11 +297,11 @@ const char wifi_html[] PROGMEM = R"rawliteral(
  <div class="card">
   <h2>Connect to WiFi</h2>
   <p>Enable if you want the device to connect to an existing 2.4 GHz WiFi network.</p>
-  <p>Access point is always enabled.</p>
+  <p>The device access point is always enabled.</p>
  </div>
- <div class="card">
- <p><span id="message"></span></p>
- </div>
+
+ <div class="card" style="display:none" id="message">
+  </div>
 
  <div class="card">
   <form id="conf_form">
@@ -310,11 +344,13 @@ function do_save(){
   for (const pair of new FormData(document.getElementById("conf_form"))) {
     console.log("pair[0]" + pair[0]);
     console.log("pair[1]" + pair[1]);    
-	if (pair[0] == "wifi_enabled") {
-		wifi_enabled = '1';
-	} else if (pair[1] != '') {
-		params.append(pair[0], pair[1]);
-	}
+    if (pair[0] == "wifi_enabled") {
+      wifi_enabled = '1';
+    } else if (pair[0] == "wifi_ssid") {
+      if (pair[1] != '') {
+        params.append(pair[0], pair[1]);
+      }
+    }
   }
   params.append("wifi_enabled", wifi_enabled);
 
@@ -349,8 +385,15 @@ function getconf(params) {
       }
     }
 
-    if (data.hasOwnProperty('message')) {
-     document.getElementById('message').innerHTML = data.message;
+    let m = document.getElementById('message');
+    m.innerHTML = "";
+    m.style.display = "none";
+    if (data.hasOwnProperty('messages')) {
+      for (const mess of data.messages) {
+        m.style.display = "block";
+        m.innerHTML += "<p class=\"" + mess.type + "\">" + mess.text + "</p>";
+//        document.getElementById('message').classList.remove("ok", "fail");
+      }
     }
   });
 }
@@ -377,9 +420,19 @@ function wifiscan() {
       wifi_ssid_list.add(option);
     }
 
-    if (data.hasOwnProperty('message')) {
-     document.getElementById('message').innerHTML = data.message;
+    let m = document.getElementById('message');
+    m.innerHTML = "";
+    m.style.display = "none";
+    if (data.hasOwnProperty('messages')) {
+      for (const mess of data.messages) {
+        m.style.display = "block";
+        m.innerHTML += "<p class=\"" + mess.type + "\">" + mess.text + "</p>";
+      }
     }
+
+//    if (data.hasOwnProperty('message')) {
+//     document.getElementById('message').innerHTML = data.message;
+//    }
   });
 
 //  document.getElementById('do_wifi_scan_ssid').innerHTML = "Scan SSID";
