@@ -117,7 +117,7 @@ typedef enum {
 String get_wifi_status_str(int status) {
   String s = "";
 //  int s = WiFi.status();
-  switch(s) {
+  switch(status) {
     case WL_IDLE_STATUS:
       s = "Idle.";
       break;    
@@ -391,26 +391,15 @@ void setup() {
     String json = "{";
 
     json += F("\"status\": [ ");
-    
-	int s = 0;
-	if(connection_attempt_started) {
-		
-		
-
-String get_wifi_status_str(WiFi.status()) {
-  String s = "";
-//  int s = WiFi.status();
-
 
     json += F("{\"name\":\"wifi_status\",");
     json += F("\"text\":\"WiFi: ") + (connection_attempt_started ? get_wifi_status_str(WL_CONNECTING) : get_wifi_status_str(WiFi.status())) + F("\"}");
-	json += F(",");
+	  json += F(",");
     json += F("{\"name\":\"client_id\",");
     json += F("\"text\":\"Client ID: ") + String(uniquessid) + F("\"}");
     json += F(",");
     json += F("{\"name\":\"free_memory\",");
     json += F("\"text\":\"Free memory: ") + String(ESP.getFreeHeap()) + F("\"}");
-
 
     json += F("]");
     json += F("}");    
@@ -436,6 +425,8 @@ String get_wifi_status_str(WiFi.status()) {
 
 void loop() {
 
+
+// wifi_loop() {
   if (WiFi.status() == WL_CONNECTED && atoi(get_conf("wifi_enabled")->data) == 0) {
     Serial.println("disconnecting.");
     WiFi.disconnect();
@@ -447,11 +438,11 @@ void loop() {
       lastnetworkscan = n;
   }
 
-  if((WiFi.getMode() & WIFI_STA) &&           // check we're in staion mode
-    atoi(get_conf("wifi_enabled")->data) &&   // check if wifi is enabled in conf
+  if((n != -1 &&                                // check ssid scan is not running
+    !connection_attempt_started &&
     WiFi.status() != WL_CONNECTED &&          // check we're not already connected
-    n != -1 &&                                // check ssid scan is not running
-    !connection_attempt_started)
+    WiFi.getMode() & WIFI_STA) &&           // check we're in staion mode
+    atoi(get_conf("wifi_enabled")->data)   // check if wifi is enabled in conf
   {
     Serial.print("connecting...");
     WiFi.begin(get_conf("wifi_ssid")->data, get_conf("wifi_password")->data);
@@ -469,7 +460,7 @@ void loop() {
         connection_attempt_started = false;
       }
   }
-
+// }
 
 
   //Serial.print(".");
