@@ -35,6 +35,12 @@ int response_maxLen = 0;
 
 int lastnetworkscan = 0;
 
+#define WL_CONNECTING 99 // extend the wifi states with own state
+long last_connection_attempt = 0;
+long connection_attempt_timeout = 30000; // ms
+bool connection_attempt_started = false;
+
+
 void setup_wifi_ap() {
   delay(10);
 
@@ -107,37 +113,40 @@ typedef enum {
     WL_DISCONNECTED     = 7
 } wl_status_t;
 */
-
-String get_wifi_status_str() {
-  String status = "";
-  int s = WiFi.status();
+#define WL_CONNECTING 99 // extend the states with own state
+String get_wifi_status_str(int status) {
+  String s = "";
+//  int s = WiFi.status();
   switch(s) {
     case WL_IDLE_STATUS:
-      status = "Idle.";
+      s = "Idle.";
       break;    
     case WL_DISCONNECTED:
-      status = "Disconnected.";
+      s = "Disconnected.";
       break;
     case WL_CONNECTED:
-      status = "Connected to " + WiFi.SSID() + " (Local IP: " + WiFi.localIP().toString() + ")";
+      s = "Connected to " + WiFi.SSID() + " (Local IP: " + WiFi.localIP().toString() + ")";
+      break;
+    case WL_CONNECTING:
+      s = "Connecting to " + WiFi.SSID() + "...";
       break;
     case WL_NO_SSID_AVAIL:
-      status = "AP not found.";
+      s = "AP not found.";
       break;
     case WL_CONNECT_FAILED:
-      status = "Connecting failed.";
+      s = "Connecting failed.";
       break;
     case WL_CONNECTION_LOST:
-      status = "Connection lost.";
+      s = "Connection lost.";
       break;      
     case WL_WRONG_PASSWORD:
-      status = "Wrong password.";
+      s = "Wrong password.";
       break;
     default:
-      status = "Connecting failed: " + String(s);
+      s = "Connecting failed: " + String(status);
       break;
   }
-  return status;
+  return s;
 }
 
 
@@ -383,9 +392,19 @@ void setup() {
 
     json += F("\"status\": [ ");
     
+	int s = 0;
+	if(connection_attempt_started) {
+		
+		
+
+String get_wifi_status_str(WiFi.status()) {
+  String s = "";
+//  int s = WiFi.status();
+
+
     json += F("{\"name\":\"wifi_status\",");
-    json += F("\"text\":\"WiFi: ") + get_wifi_status_str() + F("\"}");
-    json += F(",");
+    json += F("\"text\":\"WiFi: ") + (connection_attempt_started ? get_wifi_status_str(WL_CONNECTING) : get_wifi_status_str(WiFi.status())) + F("\"}");
+	json += F(",");
     json += F("{\"name\":\"client_id\",");
     json += F("\"text\":\"Client ID: ") + String(uniquessid) + F("\"}");
     json += F(",");
@@ -413,9 +432,7 @@ void setup() {
 
 
 
-long last_connection_attempt = 0;
-long connection_attempt_timeout = 30000; // ms
-bool connection_attempt_started = false;
+
 
 void loop() {
 
