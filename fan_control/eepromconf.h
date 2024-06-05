@@ -59,7 +59,7 @@ t_conf conf[] = {
   },
   { .name = "mqtt_root",
     .len = 33,
-    .def = "home/" 
+    .def = "home" 
   }
 };
 

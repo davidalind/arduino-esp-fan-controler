@@ -242,6 +242,8 @@ const char index_html[] PROGMEM = R"rawliteral(
 </script>
 )rawliteral";
 
+/*
+
 // /mqtt      post variables?
 // /mqttget   return current mqtt settings as json
 const char mqtt_html[] PROGMEM = R"rawliteral(
@@ -288,9 +290,7 @@ const char mqtt_html[] PROGMEM = R"rawliteral(
 </script>
 )rawliteral";
 
-// /wifi      post variables?
-// /wifiscan  return list of networks as json
-
+*/
 
 const char wifi_html[] PROGMEM = R"rawliteral(
 %HEADER%
@@ -350,6 +350,8 @@ function do_save(){
       if (pair[1] != '') {
         params.append(pair[0], pair[1]);
       }
+    } else {
+      params.append(pair[0], pair[1]);      
     }
   }
   params.append("wifi_enabled", wifi_enabled);
@@ -451,6 +453,111 @@ function onLoad(event) {
   document.getElementById('do_save').addEventListener('click', do_save);
   document.getElementById("wifi_ssid_list").onchange = do_wifi_ssid_selected;
  }
+</script>
+%FOOTER%
+)rawliteral";
+
+
+const char mqtt_html[] PROGMEM = R"rawliteral(
+%HEADER%
+ <div class="card">
+  <h2>MQTT</h2>
+ </div>
+
+ <div class="card" style="display:none" id="message">
+  </div>
+
+ <div class="card">
+  <form id="conf_form">
+  <p>Broker host<br>
+  <input class="textinput" type="text" name="mqtt_broker_host" id="mqtt_broker_host"></p>
+  <p>Port (default: 1883)<br>
+  <input class="textinput" type="text" name="mqtt_broker_port" id="mqtt_broker_port"></p>
+  <p>Root topic<br>
+  <input class="textinput" type="text" name="mqtt_root" id="mqtt_root"></p>
+  <p><input  type="checkbox" name="mqtt_enabled" id="mqtt_enabled"> MQTT Enabled</p>
+
+  <p><button type="button" id="do_save" class="button">Save</button></p>
+  </form>
+ </div>
+
+<script>
+
+window.addEventListener('load', onLoad);
+
+function do_save(){
+  console.log("saving");
+  document.getElementById('do_save').innerHTML = "Saving...";
+  document.getElementById('do_save').disabled = true;
+
+  var formData = new FormData(document.getElementById('conf_form'));
+  
+	let mqtt_enabled = '0';
+
+  const params = new URLSearchParams();
+  for (const pair of new FormData(document.getElementById("conf_form"))) {
+    console.log("pair[0]" + pair[0]);
+    console.log("pair[1]" + pair[1]);    
+    if (pair[0] == "mqtt_enabled") {
+      mqtt_enabled = '1';
+    } else {
+      params.append(pair[0], pair[1]);
+    }
+  }
+  params.append("mqtt_enabled", mqtt_enabled);
+
+  if(params.get("mqtt_broker_host") && params.get("mqtt_broker_port")) {
+	  getconf(params);
+  } else {
+    document.getElementById('message').innerHTML = "Host and port are required.";
+	}
+
+  document.getElementById('do_save').innerHTML = "Save";
+  document.getElementById('do_save').disabled = false;
+}
+
+function getconf(params) {
+  console.log("conf params:" + params.toString());
+  fetch("/conf?" + params.toString())
+    .then(res => res.json())
+    .then(data => {
+      for (const conf of data.conf) {
+        console.log("setting input: " + conf.name + " to: " + conf.value);
+      
+        if(document.getElementById(conf.name)) {
+        if (conf.name.endsWith('_enabled')) {
+          if (conf.value == '1') {  
+            document.getElementById(conf.name).checked = true;
+          } else {
+            document.getElementById(conf.name).checked = false;
+          }
+        } else {
+          document.getElementById(conf.name).value = conf.value;
+        }
+      }
+    }
+
+    let m = document.getElementById('message');
+    m.innerHTML = "";
+    m.style.display = "none";
+    if (data.hasOwnProperty('messages')) {
+      for (const mess of data.messages) {
+        m.style.display = "block";
+        m.innerHTML += "<p class=\"" + mess.type + "\">" + mess.text + "</p>";
+//        document.getElementById('message').classList.remove("ok", "fail");
+      }
+    }
+  });
+}
+
+function onLoad(event) {
+  initButton();  
+  getconf(new URLSearchParams());
+}
+
+function initButton() {
+  document.getElementById('do_save').addEventListener('click', do_save);
+}
 </script>
 %FOOTER%
 )rawliteral";
