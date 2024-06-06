@@ -1,4 +1,6 @@
 
+#ifndef html_h
+#define html_h
 
 /*
 header_html
@@ -131,8 +133,8 @@ function toggleMenu() {
 
 const char footer_html[] PROGMEM = R"rawliteral(
 <div class="card">
-  <div class="status" id="status">
-  </div>
+  <div class="status" id="status"></div>
+  <div class="status" id="ws_status"></div>
 </div>  
 
 <script>
@@ -161,25 +163,30 @@ const char footer_html[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 
-const char index_html[] PROGMEM = R"rawliteral(
+const char fan_html[] PROGMEM = R"rawliteral(
+%HEADER%
+
+ <div>
+  <h2>Fan</h2>
+ </div>
+
+ <div class="card" style="display:none" id="message"></div>
+
  <div class="card">
-  <h2>Speed</h2>
-  <p><span id="rpm">--</span> RPM</p>
-  <h2>PWM</h2>
-  <p>Duty Cycle: <span id="dutycycle">--</span> %</p>
+  <p>Speed<br>
+  <h2><span id="rpm">--</span> RPM</h2></p>
+ </div>
+ <div class="card">
+  <p>PWM Duty Cycle<br>
+  <h2><span id="dutycycle">--</span> &#37;</h2></p>
  </div>
 
  <div class="card">
-  <h2>Set Duty Cycle</h2>
-  <p><input class="textinput" type="text" size="3" id="newdutycycle" onkeydown="senddc()"> %</p>
-  <p><button id="setdutycycle" class="button">Send</button></p>
+  <p>New duty cycle<br>
+  <input class="textinput" type="text" style="width:100px" size="3" id="newdutycycle" onkeydown="senddc()"> &#37;</p>
+  <button id="setdutycycle" class="button">Set</button>
  </div>
 
- <div class="card">
-  <p>WS connection status: <span id="status">--</span></p>
-  <p>Sta WiFi status: <span id="wifi">--</span></p>
-  <p>Free mem: <span id="freemem">--</span></p>
- </div>
 
 <script>
   var gateway = `ws://${window.location.hostname}/ws`;
@@ -195,17 +202,17 @@ const char index_html[] PROGMEM = R"rawliteral(
   }
   function onOpen(event) {
     console.log('Connection opened');
-    document.getElementById('status').innerHTML = "Connected";
+    document.getElementById('ws_status').innerHTML = "WS: Connected";
   }
   function onClose(event) {
     console.log('Connection closed');
-    document.getElementById('status').innerHTML = "Disconnected. Refresh to reconnect.";
+    document.getElementById('ws_status').innerHTML = "WS: Disconnected. Refresh to reconnect.";
     resetvalues();
 //    setTimeout(initWebSocket, 2000);
   }
   function onError(event) {
     console.log("WebSocket error: ", event);
-    document.getElementById('status').innerHTML = "Error: " & event;
+    document.getElementById('ws_status').innerHTML = "WS: Error: " + event;
     resetvalues();
 //    setTimeout(initWebSocket, 2000);
   }
@@ -223,10 +230,11 @@ const char index_html[] PROGMEM = R"rawliteral(
     initButton();
   }
   function initButton() {
-    document.getElementById('setdutycycle').addEventListener('click', setdutycycle);
+    document.getElementById("setdutycycle").addEventListener("click", setdutycycle);
   }
   function setdutycycle(){
-    websocket.send("dutycycle=" & document.getElementById('newdutycycle').value);
+    console.log("Sending new DC:" + document.getElementById("newdutycycle").value);
+    websocket.send("dutycycle=" + document.getElementById("newdutycycle").value);
   }
   function senddc() {
     if(event.key === 'Enter') {
@@ -236,10 +244,13 @@ const char index_html[] PROGMEM = R"rawliteral(
   function resetvalues(){
     document.getElementById('dutycycle').innerHTML = "--";
     document.getElementById('rpm').innerHTML = "--";
-    document.getElementById('wifi').innerHTML = "--";
-    document.getElementById('freemem').innerHTML = "--";
+    // document.getElementById('wifi').innerHTML = "--";
+    // document.getElementById('freemem').innerHTML = "--";
   }
 </script>
+
+%FOOTER%
+
 )rawliteral";
 
 /*
@@ -294,7 +305,7 @@ const char mqtt_html[] PROGMEM = R"rawliteral(
 
 const char wifi_html[] PROGMEM = R"rawliteral(
 %HEADER%
- <div class="card">
+ <div>
   <h2>Connect to WiFi</h2>
   <p>Enable if you want the device to connect to an existing 2.4 GHz WiFi network.</p>
   <p>The device access point is always enabled.</p>
@@ -460,7 +471,7 @@ function onLoad(event) {
 
 const char mqtt_html[] PROGMEM = R"rawliteral(
 %HEADER%
- <div class="card">
+ <div>
   <h2>MQTT</h2>
  </div>
 
@@ -561,4 +572,7 @@ function initButton() {
 </script>
 %FOOTER%
 )rawliteral";
+
+
+#endif
 

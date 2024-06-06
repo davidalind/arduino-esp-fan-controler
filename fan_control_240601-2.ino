@@ -104,38 +104,6 @@ void setup_wifi_sta() {
 }
 
 
-void setup_mqtt() {
-  // add mac adress to client id
-  sprintf(mqtt_unique_client_id, "%s-%s", mqtt_client_id, deviceId);
-  if(atoi(get_conf((char *)"mqtt_enabled").data)) {
-    client.setServer(get_conf((char *)"mqtt_broker_host").data, atoi(get_conf((char *)"mqtt_broker_port").data));
-    client.setCallback(onMQTTMessage);
-  }
-}
-
-void reconnect_mqtt() {
-  // Loop until we're reconnected
-//  while (!client.connected()) {
-//    Serial.print("Attempting MQTT connection...");
-    // Create a random client ID
-    String clientId = "ESP8266Client-";
-    clientId += String(random(0xffff), HEX);
-    // Attempt to connect
-    if (client.connect(mqtt_unique_client_id)) {
-//      Serial.println("connected");
-      // Once connected, publish an announcement...
-//      client.publish("outTopic", "hello world");
-      // ... and resubscribe
-//      client.subscribe("inTopic");
-    } // else {
-  //    Serial.print("failed, rc=");
-  //    Serial.print(client.state());
-  //    Serial.println(" try again in 5 seconds");
-      // Wait 5 seconds before retrying
-  //    delay(5000);
-  //  }
-//  }
-}
 
 
 
@@ -510,16 +478,6 @@ void scanssid() {
   ws.textAll(ssidlist);
 }
 
-
-void onMQTTMessage(char* topic, byte* payload, unsigned int length) {
-  Serial.print(F("MQTT: "));
-  Serial.print(topic);
-  Serial.print(F(" <- "));
-  for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
-  }
-  Serial.println();
-}
 
 
 

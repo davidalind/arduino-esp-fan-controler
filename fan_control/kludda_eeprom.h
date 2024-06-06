@@ -1,3 +1,7 @@
+#ifndef kludda_eeprom_h
+#define kludda_eeprom_h
+
+
 #include <EEPROM.h>
 
 //https://www.tutorialspoint.com/compile_c_online.php
@@ -177,3 +181,4 @@ int set_conf(const char *name, const char *data) {
 
 
 
+#endif
