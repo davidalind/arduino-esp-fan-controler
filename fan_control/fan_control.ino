@@ -173,7 +173,7 @@ void set_dc(int dc) {
   ws.textAll("{\"dutycycle\":" + String(dutycycle) + "}");
 
 }
-
+/*
 void mqtt_on_message(char* topic, byte* payload, unsigned int length) {
   String p = "";
   String t = String(topic);
@@ -198,14 +198,17 @@ void mqtt_on_message(char* topic, byte* payload, unsigned int length) {
   p = String();
   t = String();
 
-/*
-  Serial.print(F("MQTT: "));
-  Serial.print(topic);
-  Serial.print(F(" <- "));
-  Serial.println();
+}
 */
 
+
+
+void on_mqtt_dc_set (String *t, String *p) {
+  set_dc(p->toInt());
 }
+
+
+
 
 
 String processor(const String& var)
@@ -249,7 +252,9 @@ void setup() {
 
   // setup wifi
   setup_mqtt();
-  mqtt_client.setCallback(mqtt_on_message);
+  mqtt_subscribe("fan/dutycycle/set",  on_mqtt_dc_set);
+  
+//  mqtt_client.setCallback(mqtt_on_message);
 
 
   // setup websocket
