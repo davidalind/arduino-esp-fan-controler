@@ -13,7 +13,8 @@ mqtt_html
 
 const char header_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html><html>
-<head><title>Fan Control</title>
+<head>
+<title>%UNIQUEID%</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 body {
@@ -108,7 +109,7 @@ input[type="checkbox"] {
 </head>
 <body>
 <div class="topnav">
- <a href="/" class="active">Fan control</a>
+ <a href="/" class="active">%UNIQUEID%</a>
  <div id="myLinks">
   <a href="/">Dashboard</a>
   <a href="/wifi">WiFi</a>
