@@ -503,7 +503,7 @@ void loop() {
     ws.textAll("{\"rpm\":" + String(rpm) + ", \"dutycycle\":" + String(dutycycle) + "}");
     mqtt_publish("fan/rpm", String(rpm));
     mqtt_publish("fan/dutycycle", String(dutycycle));    
-    mqtt_publish("device/freeheap", String(ESP.getFreeHeap()));
+    mqtt_publish("mcu/freeheap", String(ESP.getFreeHeap()));
 //    ws.textAll("{\"rpm\":" + String(rpm) + ", \"dutycycle\":" + String(dutycycle) + ", \"freemem\":" + String(ESP.getFreeHeap())  + "}");
   
 
