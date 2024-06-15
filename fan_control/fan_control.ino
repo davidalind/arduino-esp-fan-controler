@@ -34,7 +34,7 @@ const byte PWM_PIN = D1;
 #define PWM_FREQ_HZ 25000 // PWM frequency in HZ
 
 // TACHO conf
-const byte TACHO_PIN = D4;
+const byte TACHO_PIN = D3;
 
 
 int dutycycle = 0;

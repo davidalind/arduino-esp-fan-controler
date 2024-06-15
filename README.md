@@ -35,4 +35,4 @@ Vin is connected to Vin and fan 12V.
 
 Fan PWM is connected to D1.
 
-Fan tacho is connected to D4.
+Fan tacho is connected to D3.
